@@ -83,6 +83,34 @@ def test_detail_page(client, product):
     assert escape(product.description) in page
 
 
+def test_catalog_shows_featured_badge(client, featured_product):
+    response = client.get(reverse("products:catalog"))
+
+    assert "Featured" in response.content.decode()
+
+
+def test_catalog_hides_featured_badge_for_unfeatured_product(client, product):
+    response = client.get(reverse("products:catalog"))
+
+    assert "Featured" not in response.content.decode()
+
+
+def test_detail_shows_featured_badge(client, featured_product):
+    response = client.get(featured_product.get_absolute_url())
+
+    assert "Featured" in response.content.decode()
+
+
+def test_detail_hides_featured_badge_for_unfeatured_product(client, product):
+    response = client.get(product.get_absolute_url())
+
+    assert "Featured" not in response.content.decode()
+
+
+def test_product_defaults_to_unfeatured(product):
+    assert product.is_featured is False
+
+
 def test_detail_unknown_slug_404(client, db):
     response = client.get(reverse("products:detail", kwargs={"slug": "no-such-thing"}))
 
