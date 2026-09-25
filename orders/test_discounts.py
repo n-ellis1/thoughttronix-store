@@ -6,6 +6,7 @@ the whole order), ``product_code`` is SERAPHINE25 ($25 off the hub only).
 """
 
 import html
+import re
 from datetime import timedelta
 from decimal import Decimal
 from http import HTTPStatus
@@ -271,12 +272,82 @@ def test_applying_a_code_previews_the_discounted_total(
 
     body = page(response)
     assert response.status_code == HTTPStatus.OK
-    assert "THOUGHTS10 applied." in body
+    assert re.search(r"THOUGHTS10</span>\s+applied\.", body)
     assert "−$70.00" in body
     assert "$629.98" in body
     assert 'id="place-order-total" hx-swap-oob="true"' in body
     assert 'value="THOUGHTS10"' in body  # the hidden input carries it to checkout
     assert "<html" not in body  # a partial, never base.html
+
+
+def submitted_code(body):
+    """The value of the hidden input that carries the code into the order."""
+    match = re.search(
+        r'name="coupon_code"\s+form="checkout-form"\s+value="([^"]*)"', body
+    )
+    assert match, "hidden coupon input missing"
+    return match.group(1)
+
+
+def test_an_applied_code_offers_a_remove_code_button(
+    client, customer, cart_item, whole_order_code
+):
+    client.force_login(customer)
+
+    body = page(
+        client.post(reverse("orders:checkout_summary"), {"coupon_code": "THOUGHTS10"})
+    )
+
+    assert "Remove code" in body
+    assert 'hx-vals=\'{"coupon_code": ""}\'' in body  # it posts a blank code
+
+
+def test_removing_a_code_restores_the_original_total_and_allows_another(
+    client, customer, cart_item, whole_order_code, product_code
+):
+    client.force_login(customer)
+    summary_url = reverse("orders:checkout_summary")
+    applied = page(client.post(summary_url, {"coupon_code": "THOUGHTS10"}))
+    assert submitted_code(applied) == "THOUGHTS10"
+
+    # What the Remove code button sends.
+    removed = page(client.post(summary_url, {"coupon_code": ""}))
+
+    assert "Discount (" not in removed
+    assert "Remove code" not in removed
+    assert 'role="alert"' not in removed  # removing is not an error
+    assert '<span id="place-order-total" hx-swap-oob="true">$699.98</span>' in removed
+    assert submitted_code(removed) == ""  # nothing carried into the order
+    # The visible code box is empty, ready for another code.
+    assert re.search(r'id="coupon-input"\s+name="coupon_code"\s+value=""', removed)
+    # The swap covers only the summary: no checkout fields are re-rendered,
+    # so addresses and card details the customer typed are left alone.
+    assert 'name="shipping_street"' not in removed
+    assert 'name="card_number"' not in removed
+
+    another = page(client.post(summary_url, {"coupon_code": "SERAPHINE25"}))
+    assert "Discount (SERAPHINE25)" in another
+    assert submitted_code(another) == "SERAPHINE25"
+
+
+def test_checkout_after_removing_a_code_places_an_undiscounted_order(
+    client, customer, cart_item, whole_order_code
+):
+    client.force_login(customer)
+    summary_url = reverse("orders:checkout_summary")
+    client.post(summary_url, {"coupon_code": "THOUGHTS10"})
+    client.post(summary_url, {"coupon_code": ""})
+
+    response = client.post(
+        reverse("orders:checkout"), {**VALID_DATA, "coupon_code": ""}
+    )
+
+    order = Order.objects.get()
+    assert response.status_code == HTTPStatus.FOUND
+    assert order.discount_amount == Decimal("0.00")
+    assert order.coupon_code == ""
+    assert order.total == order.subtotal == Decimal("699.98")
+    assert order.shipping_street == "12 Cortex Lane"
 
 
 @pytest.mark.parametrize(

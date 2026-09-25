@@ -42,15 +42,20 @@
       {% if summary.error %}
         <p class="mt-1 text-sm text-error" role="alert">{{ summary.error }}</p>
       {% elif summary.applied_code %}
-        <p class="mt-1 flex items-center justify-between text-sm text-success">
-          <span>{{ summary.applied_code.code }} applied.</span>
+        {# Remove re-renders the summary with no code: the original total, #}
+        {# an empty code box, and nothing carried into the order.           #}
+        <div class="mt-2 flex items-center justify-between gap-2 rounded-box bg-success/10 px-3 py-2 text-sm">
+          <span class="text-success">
+            <span class="font-mono font-semibold">{{ summary.applied_code.code }}</span> applied.
+          </span>
           <button type="button"
-                  class="link link-hover opacity-70"
+                  class="btn btn-outline btn-error btn-xs"
+                  aria-label="Remove code {{ summary.applied_code.code }}"
                   hx-post="{% url 'orders:checkout_summary' %}"
                   hx-vals='{"coupon_code": ""}'
                   hx-target="#order-summary"
-                  hx-swap="outerHTML">Remove</button>
-        </p>
+                  hx-swap="outerHTML">Remove code</button>
+        </div>
       {% endif %}
       <input type="hidden"
              name="coupon_code"
