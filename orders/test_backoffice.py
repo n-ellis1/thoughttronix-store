@@ -23,6 +23,7 @@ def shipped_order(customer):
     return Order.objects.create(
         user=customer,
         status=Order.Status.SHIPPED,
+        subtotal=Decimal("9.00"),
         total=Decimal("9.00"),
         email="casey@example.com",
         shipping_name="Casey Monroe",

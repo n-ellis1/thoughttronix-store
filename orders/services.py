@@ -6,12 +6,13 @@ validated checkout into an order, all-or-nothing. Callers never touch
 """
 
 from collections.abc import Mapping
+from decimal import Decimal
 from typing import Any
 
 from django.contrib.auth.models import AbstractBaseUser
 from django.db import transaction
 
-from .models import Cart, Order, OrderItem
+from .models import Cart, DiscountCode, Order, OrderItem
 
 ADDRESS_FIELDS = [
     "email",
@@ -49,8 +50,17 @@ def place_order(
     All-or-nothing: runs in a transaction, so a failure partway through
     leaves no partial order and the cart intact.
 
+    ``coupon_code`` is the code as the customer typed it; blank means no
+    discount. It is validated and priced here, inside the transaction,
+    whatever the checkout preview showed. The order snapshots the result
+    — ``subtotal``, ``discount_amount``, ``total`` (what was paid), and
+    the code text — so later edits to or retirement of the code never
+    change it.
+
     Raises ``ValueError`` if the cart is empty or holds a product that is
-    no longer available.
+    no longer available, and its subclass ``InvalidDiscountCode`` if the
+    coupon code is unknown, retired, expired, or matches nothing in the
+    cart. Either way no order is created and the cart is untouched.
     """
     lines = list(cart.lines())
     if not lines:
@@ -62,10 +72,21 @@ def place_order(
             "Remove them from the cart to check out."
         )
 
+    subtotal = sum((line.line_total for line in lines), Decimal("0.00"))
+    discount_code, discount = None, Decimal("0.00")
+    if DiscountCode.normalize(coupon_code):
+        # Re-validated here, not trusted from the checkout preview: the
+        # code may have expired or been retired since the customer applied it.
+        discount_code, discount = DiscountCode.objects.quote(coupon_code, lines)
+
     card_digits = checkout_data["card_number"].replace(" ", "").replace("-", "")
     order = Order.objects.create(
         user=user,
-        total=cart.total(),
+        subtotal=subtotal,
+        discount_amount=discount,
+        total=subtotal - discount,
+        coupon_code=discount_code.code if discount_code else "",
+        discount_code=discount_code,
         card_last4=card_digits[-4:],
         **{name: checkout_data[name] for name in ADDRESS_FIELDS},
     )

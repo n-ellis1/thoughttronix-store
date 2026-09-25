@@ -10,7 +10,9 @@ and no ``clean()`` — none of its current rules need imperative validation.
 from django import forms
 from django.core.validators import RegexValidator
 
-from .models import Address, Order
+from products.models import Product
+
+from .models import Address, DiscountCode, Order
 from .validators import (
     US_STATES,
     validate_card_number,
@@ -77,6 +79,11 @@ class CheckoutForm(forms.Form):
         label="Save this address to my account", required=False
     )
 
+    # Rendered in the order summary; ``place_order`` validates the code
+    # itself, so an unknown or expired one is a checkout error, not a
+    # form error.
+    coupon_code = forms.CharField(label="Discount code", max_length=32, required=False)
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         style_widgets(self)
@@ -107,6 +114,52 @@ class AddressForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         style_widgets(self)
+
+
+class DiscountCodeForm(forms.ModelForm):
+    """Create or edit a discount code in the back office.
+
+    Once any order has used the code, its terms (``LOCKED_WHEN_USED``)
+    render read-only and posted values for them are ignored — only the
+    expiry date stays editable. Retiring is a separate POST button.
+    """
+
+    class Meta:
+        model = DiscountCode
+        fields = ["code", "kind", "value", "scope", "products", "expires_on"]
+        widgets = {
+            "products": forms.CheckboxSelectMultiple,
+            "expires_on": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        style_widgets(self)
+        self.fields["products"].widget.attrs["class"] = "checkbox checkbox-primary"
+        self.fields["products"].queryset = Product.objects.order_by("name")
+        self.locked = bool(self.instance.pk and self.instance.is_used())
+        if self.locked:
+            for name in DiscountCode.LOCKED_WHEN_USED:
+                self.fields[name].disabled = True
+
+    def clean_code(self):
+        return DiscountCode.normalize(self.cleaned_data["code"])
+
+    def clean(self):
+        cleaned = super().clean()
+        kind, value = cleaned.get("kind"), cleaned.get("value")
+        if value is not None:
+            if value <= 0:
+                self.add_error("value", "The discount must be more than zero.")
+            elif kind == DiscountCode.Kind.PERCENT and value > 100:
+                self.add_error("value", "A percentage can't be more than 100.")
+        if cleaned.get("scope") == DiscountCode.Scope.PRODUCTS and not cleaned.get(
+            "products"
+        ):
+            self.add_error(
+                "products", "Choose at least one product for a product-specific code."
+            )
+        return cleaned
 
 
 class OrderStatusForm(forms.ModelForm):

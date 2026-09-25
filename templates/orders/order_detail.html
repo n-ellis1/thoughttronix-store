@@ -56,9 +56,9 @@
       </div>
     </div>
     <div class="card bg-base-100 shadow-md">
-      <div class="card-body items-end justify-center">
-        <p class="text-sm uppercase tracking-wide opacity-60">Order total</p>
-        <p class="text-3xl font-bold text-primary">${{ order.total|intcomma }}</p>
+      <div class="card-body justify-center">
+        <h2 class="card-title text-base">Order total</h2>
+        {% include "orders/partials/_order_totals.html" %}
       </div>
     </div>
   </div>

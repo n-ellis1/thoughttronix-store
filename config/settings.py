@@ -121,7 +121,8 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = "en-us"
 
-TIME_ZONE = "UTC"
+# The store's local clock — discount codes expire at the end of their date here.
+TIME_ZONE = env.str("TIME_ZONE", default="America/Chicago")
 
 USE_I18N = True
 

@@ -11,6 +11,7 @@ and the full-page My Addresses views.
 
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.contrib.messages.views import SuccessMessageMixin
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse, reverse_lazy
@@ -28,8 +29,8 @@ from django.views.generic import (
 from accounts.mixins import StaffRequiredMixin
 from products.models import Product
 
-from .forms import AddressForm, CheckoutForm, OrderStatusForm
-from .models import Address, Cart, CartItem, Order
+from .forms import AddressForm, CheckoutForm, DiscountCodeForm, OrderStatusForm
+from .models import Address, Cart, CartItem, DiscountCode, InvalidDiscountCode, Order
 from .services import place_order
 
 ADDRESS_SECTIONS = ("shipping", "billing")
@@ -148,19 +149,53 @@ class CheckoutView(LoginRequiredMixin, FormView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context["cart"] = Cart.for_user(self.request.user)
+        cart = Cart.for_user(self.request.user)
+        context["cart"] = cart
+        context["summary"] = cart.checkout_summary(
+            self.request.POST.get("coupon_code", "")
+        )
         context["saved_addresses"] = self.request.user.addresses.all()
         return context
 
     def form_valid(self, form):
         cart = Cart.for_user(self.request.user)
-        order = place_order(cart, self.request.user, form.cleaned_data)
+        try:
+            order = place_order(
+                cart,
+                self.request.user,
+                form.cleaned_data,
+                coupon_code=form.cleaned_data["coupon_code"],
+            )
+        except InvalidDiscountCode as error:
+            # The code went bad after it was applied: stay on checkout,
+            # keep everything typed, and say why.
+            form.add_error(None, str(error))
+            return self.form_invalid(form)
         # Only after the order succeeds: an address is saved for a real order.
         for section in ADDRESS_SECTIONS:
             if form.cleaned_data[f"save_{section}_address"]:
                 Address.objects.save_for(self.request.user, form.cleaned_data, section)
         messages.success(self.request, f"Order {order.number} placed. Thank you!")
         return redirect(reverse("orders:confirmation", kwargs={"pk": order.pk}))
+
+
+class CheckoutSummaryView(LoginRequiredMixin, View):
+    """HTMX: preview a discount code in checkout's order summary.
+
+    Re-renders the summary with subtotal, discount, and total, or the
+    reason the code was rejected; the Place order button's total swaps
+    out-of-band. A blank code removes the discount. A preview only —
+    ``place_order`` re-validates when the order is placed.
+    """
+
+    def post(self, request):
+        cart = Cart.for_user(request.user)
+        summary = cart.checkout_summary(request.POST.get("coupon_code", ""))
+        return render(
+            request,
+            "orders/partials/_order_summary.html",
+            {"summary": summary, "oob_total": True},
+        )
 
 
 class CheckoutAddressFieldsView(LoginRequiredMixin, View):
@@ -317,6 +352,73 @@ class ManageOrderDetailView(StaffRequiredMixin, DetailView):
         context = super().get_context_data(**kwargs)
         context["status_form"] = OrderStatusForm(instance=self.object)
         return context
+
+
+class ManageDiscountListView(StaffRequiredMixin, ListView):
+    """Every discount code with its status and how many orders used it."""
+
+    template_name = "orders/manage_discounts.html"
+    context_object_name = "discounts"
+    queryset = DiscountCode.objects.with_usage()
+    extra_context = {"section": "discounts"}
+
+
+class ManageDiscountCreateView(StaffRequiredMixin, SuccessMessageMixin, CreateView):
+    model = DiscountCode
+    form_class = DiscountCodeForm
+    template_name = "orders/manage_discount_form.html"
+    success_url = reverse_lazy("orders:manage_discounts")
+    success_message = "%(code)s created."
+    extra_context = {"section": "discounts"}
+
+
+class ManageDiscountUpdateView(StaffRequiredMixin, SuccessMessageMixin, UpdateView):
+    """Edit a code; the form locks a used code's terms."""
+
+    model = DiscountCode
+    form_class = DiscountCodeForm
+    template_name = "orders/manage_discount_form.html"
+    success_url = reverse_lazy("orders:manage_discounts")
+    success_message = "%(code)s updated."
+    extra_context = {"section": "discounts"}
+
+
+class ManageDiscountDeleteView(StaffRequiredMixin, SuccessMessageMixin, DeleteView):
+    """Confirm, then delete — only never-used codes; used ones 404."""
+
+    queryset = DiscountCode.objects.unused()
+    template_name = "orders/manage_discount_confirm_delete.html"
+    context_object_name = "discount"
+    success_url = reverse_lazy("orders:manage_discounts")
+    success_message = "Discount code deleted."
+    extra_context = {"section": "discounts"}
+
+
+class DiscountActiveView(StaffRequiredMixin, View):
+    """Base for the POST-only Retire / Reactivate buttons."""
+
+    def post(self, request, pk):
+        discount = get_object_or_404(DiscountCode, pk=pk)
+        self.act(discount)
+        messages.success(request, self.message.format(code=discount.code))
+        return redirect("orders:manage_discounts")
+
+    def act(self, discount):
+        raise NotImplementedError
+
+
+class RetireDiscountView(DiscountActiveView):
+    message = "{code} retired. Orders already placed with it are unchanged."
+
+    def act(self, discount):
+        discount.retire()
+
+
+class ReactivateDiscountView(DiscountActiveView):
+    message = "{code} is active again."
+
+    def act(self, discount):
+        discount.reactivate()
 
 
 class UpdateOrderStatusView(StaffRequiredMixin, View):

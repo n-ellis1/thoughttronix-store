@@ -1,0 +1,86 @@
+{# Checkout's order summary: lines, the discount code box, and the totals. #}
+{# The visible code box sits outside the checkout form, so Enter applies #}
+{# the code rather than placing the order; the hidden input carries only  #}
+{# an applied code into the order. From HTMX, oob_total=True also swaps   #}
+{# the Place order button's total.                                         #}
+{% load humanize %}
+<div id="order-summary" class="card bg-base-100 shadow-md">
+  <div class="card-body">
+    <h2 class="card-title">Your order</h2>
+    <ul class="space-y-2">
+      {% for item in summary.lines %}
+        <li class="flex justify-between gap-4 text-sm">
+          <span>{{ item.quantity }} × {{ item.product.name }}</span>
+          <span class="whitespace-nowrap">${{ item.line_total|intcomma }}</span>
+        </li>
+      {% endfor %}
+    </ul>
+
+    <div class="divider my-2"></div>
+
+    <div>
+      <label class="label mb-1" for="coupon-input">Discount code</label>
+      <div class="join w-full">
+        <input type="text"
+               id="coupon-input"
+               name="coupon_code"
+               value="{{ summary.coupon_code }}"
+               maxlength="32"
+               autocomplete="off"
+               class="input join-item w-full uppercase"
+               hx-post="{% url 'orders:checkout_summary' %}"
+               hx-trigger="keyup[key=='Enter']"
+               hx-target="#order-summary"
+               hx-swap="outerHTML">
+        <button type="button"
+                class="btn btn-outline join-item"
+                hx-post="{% url 'orders:checkout_summary' %}"
+                hx-include="#coupon-input"
+                hx-target="#order-summary"
+                hx-swap="outerHTML">Apply</button>
+      </div>
+      {% if summary.error %}
+        <p class="mt-1 text-sm text-error" role="alert">{{ summary.error }}</p>
+      {% elif summary.applied_code %}
+        <p class="mt-1 flex items-center justify-between text-sm text-success">
+          <span>{{ summary.applied_code.code }} applied.</span>
+          <button type="button"
+                  class="link link-hover opacity-70"
+                  hx-post="{% url 'orders:checkout_summary' %}"
+                  hx-vals='{"coupon_code": ""}'
+                  hx-target="#order-summary"
+                  hx-swap="outerHTML">Remove</button>
+        </p>
+      {% endif %}
+      <input type="hidden"
+             name="coupon_code"
+             form="checkout-form"
+             value="{{ summary.applied_code.code|default:'' }}">
+    </div>
+
+    <div class="divider my-2"></div>
+
+    <dl class="space-y-1 text-sm">
+      <div class="flex justify-between">
+        <dt>Subtotal</dt>
+        <dd>${{ summary.subtotal|intcomma }}</dd>
+      </div>
+      {% if summary.applied_code %}
+        <div class="flex justify-between text-success">
+          <dt>Discount ({{ summary.applied_code.code }})</dt>
+          <dd>−${{ summary.discount|intcomma }}</dd>
+        </div>
+      {% endif %}
+      <div class="flex justify-between text-base font-semibold">
+        <dt>Total</dt>
+        <dd class="text-primary">${{ summary.total|intcomma }}</dd>
+      </div>
+    </dl>
+    <a href="{% url 'orders:cart' %}" class="link link-hover text-sm opacity-70">
+      Edit cart
+    </a>
+  </div>
+</div>
+{% if oob_total %}
+  <span id="place-order-total" hx-swap-oob="true">${{ summary.total|intcomma }}</span>
+{% endif %}

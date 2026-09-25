@@ -9,7 +9,7 @@ from decimal import Decimal
 import pytest
 from django.contrib.auth import get_user_model
 
-from orders.models import Address, Cart, CartItem
+from orders.models import Address, Cart, CartItem, DiscountCode
 from products.models import Category, Product, Tag
 
 
@@ -84,6 +84,25 @@ def cart(customer):
 @pytest.fixture
 def cart_item(cart, product):
     return CartItem.objects.create(cart=cart, product=product, quantity=2)
+
+
+@pytest.fixture
+def whole_order_code(db):
+    """10% off the whole order, no expiry."""
+    return DiscountCode.objects.create(code="THOUGHTS10", value=Decimal("10"))
+
+
+@pytest.fixture
+def product_code(product):
+    """$25 off the Seraphine Home Hub only."""
+    code = DiscountCode.objects.create(
+        code="SERAPHINE25",
+        kind=DiscountCode.Kind.FIXED,
+        value=Decimal("25.00"),
+        scope=DiscountCode.Scope.PRODUCTS,
+    )
+    code.products.add(product)
+    return code
 
 
 @pytest.fixture

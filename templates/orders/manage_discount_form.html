@@ -1,0 +1,60 @@
+{% extends "backoffice/base.html" %}
+
+{% block title %}
+  {% if form.instance.pk %}Edit discount code{% else %}New discount code{% endif %} — Back office
+{% endblock %}
+
+{% block backoffice %}
+  <div class="card mx-auto max-w-2xl bg-base-100 shadow-md">
+    <div class="card-body">
+      <h2 class="card-title">
+        {% if form.instance.pk %}Edit {{ form.instance.code }}{% else %}New discount code{% endif %}
+      </h2>
+
+      {% if form.locked %}
+        <div class="alert alert-info" role="status">
+          <span>
+            This code has been used on orders, so its terms are locked.
+            You can still change when it expires, or retire it from the list.
+          </span>
+        </div>
+      {% endif %}
+
+      <form method="post" class="mt-2 space-y-4">
+        {% csrf_token %}
+        {% for error in form.non_field_errors %}
+          <div class="alert alert-error" role="alert"><span>{{ error }}</span></div>
+        {% endfor %}
+
+        {% for field in form %}
+          {% if field.name == "products" %}
+            <fieldset>
+              <legend class="label mb-1">{{ field.label }}</legend>
+              <div class="grid max-h-64 gap-1 overflow-y-auto rounded-box border border-base-300 p-3 sm:grid-cols-2">
+                {% for choice in field %}
+                  <label class="label cursor-pointer justify-start gap-2 text-sm">
+                    {{ choice.tag }}
+                    <span>{{ choice.choice_label }}</span>
+                  </label>
+                {% endfor %}
+              </div>
+              {% if field.help_text %}
+                <p class="mt-1 text-xs opacity-60">{{ field.help_text }}</p>
+              {% endif %}
+              {% for error in field.errors %}
+                <p class="mt-1 text-sm text-error">{{ error }}</p>
+              {% endfor %}
+            </fieldset>
+          {% else %}
+            {% include "products/partials/_field.html" %}
+          {% endif %}
+        {% endfor %}
+
+        <div class="mt-2 flex items-center justify-end gap-2">
+          <a href="{% url 'orders:manage_discounts' %}" class="btn btn-ghost">Cancel</a>
+          <button type="submit" class="btn btn-primary">Save discount code</button>
+        </div>
+      </form>
+    </div>
+  </div>
+{% endblock %}

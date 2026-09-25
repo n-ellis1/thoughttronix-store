@@ -22,7 +22,7 @@ from django.db import transaction
 from django.utils import timezone
 from django.utils.text import slugify
 
-from orders.models import Address, Cart, Order, OrderItem
+from orders.models import Address, Cart, DiscountCode, Order, OrderItem
 from products.models import Category, Product, Tag
 
 TAGS = [
@@ -471,6 +471,24 @@ CUSTOMER_CART = [
     ("whisper-alarm-clock", 1),
 ]
 
+# Demo discount codes, one per checkout outcome. Each entry is
+# (code, kind, value, eligible product slugs, expires in days, is_active):
+# an empty slug list means a whole-order code; ``None`` days means no
+# expiry. Expiry is relative to today, so every run gives the same result.
+DISCOUNT_CODES = [
+    ("THOUGHTS10", "PERCENT", Decimal("10"), [], None, True),
+    (
+        "SERAPHINE25",
+        "FIXED",
+        Decimal("25.00"),
+        ["seraphine", "seraphine-mini"],
+        60,
+        True,
+    ),
+    ("SUMMER-THOUGHTS", "PERCENT", Decimal("15"), [], -30, True),
+    ("LAUNCH-DAY", "FIXED", Decimal("50.00"), [], None, False),
+]
+
 # The customer demo login's visible order history: (days ago, status,
 # [(product slug, quantity), ...]). Statuses follow age, like the
 # background orders, plus one recent order still in flight.
@@ -515,6 +533,7 @@ class Command(BaseCommand):
         self._create_customer_cart()
         self._create_customer_addresses()
         self._create_orders()
+        self._create_discount_codes()
 
         self.stdout.write(
             self.style.SUCCESS(
@@ -523,6 +542,7 @@ class Command(BaseCommand):
                 f"{Product.objects.count()} products, "
                 f"{get_user_model().objects.count()} users, "
                 f"{Order.objects.count()} orders, "
+                f"{DiscountCode.objects.count()} discount codes, "
                 f"and a live cart for 'customer'."
             )
         )
@@ -530,6 +550,7 @@ class Command(BaseCommand):
     def _wipe(self):
         """Remove everything the seed owns; the rebuild starts from zero."""
         Order.objects.all().delete()
+        DiscountCode.objects.all().delete()
         Cart.objects.all().delete()
         Product.objects.all().delete()
         Tag.objects.all().delete()
@@ -664,17 +685,36 @@ class Command(BaseCommand):
                 rng=rng,
             )
 
+    def _create_discount_codes(self):
+        today = timezone.localdate()
+        for code, kind, value, slugs, expires_in, is_active in DISCOUNT_CODES:
+            if expires_in is None:
+                expires_on = None
+            else:
+                expires_on = today + timedelta(days=expires_in)
+            discount = DiscountCode.objects.create(
+                code=code,
+                kind=kind,
+                value=value,
+                scope="PRODUCTS" if slugs else "ORDER",
+                expires_on=expires_on,
+                is_active=is_active,
+            )
+            discount.products.set(Product.objects.filter(slug__in=slugs))
+
     def _build_order(self, *, user, created_at, status, lines, rng):
         """One order with denormalized addresses and purchase-time prices."""
         street, city, state, zip_code = rng.choice(SEED_ADDRESSES)
         name = f"{user.first_name} {user.last_name}"
+        total = sum(
+            (product.price * quantity for product, quantity in lines),
+            Decimal("0.00"),
+        )
         order = Order.objects.create(
             user=user,
             status=status,
-            total=sum(
-                (product.price * quantity for product, quantity in lines),
-                Decimal("0.00"),
-            ),
+            subtotal=total,
+            total=total,
             email=user.email,
             shipping_name=name,
             shipping_street=street,

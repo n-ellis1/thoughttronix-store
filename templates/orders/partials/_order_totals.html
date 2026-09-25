@@ -1,0 +1,19 @@
+{# An order's saved amounts: subtotal, the discount (when one was applied), #}
+{# and the total paid. Always the order's snapshot — never recalculated.   #}
+{% load humanize %}
+<dl class="w-full space-y-1 text-sm">
+  <div class="flex justify-between gap-6">
+    <dt class="opacity-70">Subtotal</dt>
+    <dd>${{ order.subtotal|intcomma }}</dd>
+  </div>
+  {% if order.discount_amount %}
+    <div class="flex justify-between gap-6 text-success">
+      <dt>Discount{% if order.coupon_code %} ({{ order.coupon_code }}){% endif %}</dt>
+      <dd>−${{ order.discount_amount|intcomma }}</dd>
+    </div>
+  {% endif %}
+  <div class="flex items-baseline justify-between gap-6 border-t border-base-300 pt-1">
+    <dt class="font-semibold">Total</dt>
+    <dd class="text-2xl font-bold text-primary">${{ order.total|intcomma }}</dd>
+  </div>
+</dl>

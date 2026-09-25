@@ -28,6 +28,7 @@ def make_order(user, total, *, days_ago=0, status=Order.Status.PLACED):
     return Order.objects.create(
         user=user,
         status=status,
+        subtotal=Decimal(total),
         total=Decimal(total),
         email="casey@example.com",
         shipping_name="Casey Monroe",

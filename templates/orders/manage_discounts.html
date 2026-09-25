@@ -1,0 +1,91 @@
+{% extends "backoffice/base.html" %}
+
+{% block title %}Discount codes — Back office{% endblock %}
+
+{% block backoffice %}
+  <div class="mb-4 flex flex-wrap items-center justify-between gap-4">
+    <h2 class="text-xl font-semibold">
+      {{ discounts|length }} discount code{{ discounts|length|pluralize }}
+    </h2>
+    <a href="{% url 'orders:manage_discount_create' %}" class="btn btn-primary btn-sm">
+      + Add discount code
+    </a>
+  </div>
+
+  {% if discounts %}
+    <div class="overflow-x-auto rounded-box bg-base-100 shadow-md">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Code</th>
+            <th>Discount</th>
+            <th>Applies to</th>
+            <th>Expires</th>
+            <th>Status</th>
+            <th>Used on</th>
+            <th class="text-right">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for discount in discounts %}
+            <tr>
+              <td>
+                <a href="{% url 'orders:manage_discount_update' discount.pk %}"
+                   class="link-hover font-mono font-semibold">{{ discount.code }}</a>
+              </td>
+              <td>{{ discount.value_display }}</td>
+              <td>
+                {% if discount.scope == "PRODUCTS" %}
+                  {{ discount.product_count }} product{{ discount.product_count|pluralize }}
+                {% else %}
+                  Whole order
+                {% endif %}
+              </td>
+              <td>{{ discount.expires_on|date:"M j, Y"|default:"Never" }}</td>
+              <td>
+                {% if discount.status == "Active" %}
+                  <span class="badge badge-success badge-outline">Active</span>
+                {% elif discount.status == "Expired" %}
+                  <span class="badge badge-warning badge-outline">Expired</span>
+                {% else %}
+                  <span class="badge badge-ghost">Retired</span>
+                {% endif %}
+              </td>
+              <td>{{ discount.order_count }} order{{ discount.order_count|pluralize }}</td>
+              <td class="text-right">
+                <div class="flex items-center justify-end gap-1">
+                  <a href="{% url 'orders:manage_discount_update' discount.pk %}"
+                     class="btn btn-ghost btn-xs">Edit</a>
+                  {% if discount.is_active %}
+                    <form method="post" action="{% url 'orders:manage_discount_retire' discount.pk %}">
+                      {% csrf_token %}
+                      <button type="submit" class="btn btn-ghost btn-xs text-warning">Retire</button>
+                    </form>
+                  {% else %}
+                    <form method="post" action="{% url 'orders:manage_discount_reactivate' discount.pk %}">
+                      {% csrf_token %}
+                      <button type="submit" class="btn btn-ghost btn-xs">Reactivate</button>
+                    </form>
+                  {% endif %}
+                  {% if not discount.order_count %}
+                    <a href="{% url 'orders:manage_discount_delete' discount.pk %}"
+                       class="btn btn-ghost btn-xs text-error">Delete</a>
+                  {% endif %}
+                </div>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="py-16 text-center">
+      <p class="text-5xl">🎟️</p>
+      <p class="mt-4 text-xl font-semibold">No discount codes yet</p>
+      <p class="mt-2 opacity-70">Create your first promotion — a little generosity buys a lot of attention.</p>
+      <a href="{% url 'orders:manage_discount_create' %}" class="btn btn-primary btn-sm mt-6">
+        Create a discount code
+      </a>
+    </div>
+  {% endif %}
+{% endblock %}

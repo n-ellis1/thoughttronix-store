@@ -1,0 +1,20 @@
+{% extends "backoffice/base.html" %}
+
+{% block title %}Delete discount code — Back office{% endblock %}
+
+{% block backoffice %}
+  <div class="card mx-auto max-w-lg bg-base-100 shadow-md">
+    <div class="card-body">
+      <h2 class="card-title">Delete {{ discount.code }}?</h2>
+      <p class="opacity-70">
+        No order has used this code, so deleting it removes it for good.
+        Codes that have been used can only be retired.
+      </p>
+      <form method="post" class="mt-4 flex justify-end gap-2">
+        {% csrf_token %}
+        <a href="{% url 'orders:manage_discounts' %}" class="btn btn-ghost">Cancel</a>
+        <button type="submit" class="btn btn-error">Delete discount code</button>
+      </form>
+    </div>
+  </div>
+{% endblock %}
