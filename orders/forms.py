@@ -10,67 +10,27 @@ and no ``clean()`` — none of its current rules need imperative validation.
 from django import forms
 from django.core.validators import RegexValidator
 
-from .models import Order
-from .validators import validate_card_number, validate_expiry
-
-US_STATES = [
-    ("AL", "Alabama"),
-    ("AK", "Alaska"),
-    ("AZ", "Arizona"),
-    ("AR", "Arkansas"),
-    ("CA", "California"),
-    ("CO", "Colorado"),
-    ("CT", "Connecticut"),
-    ("DE", "Delaware"),
-    ("DC", "District of Columbia"),
-    ("FL", "Florida"),
-    ("GA", "Georgia"),
-    ("HI", "Hawaii"),
-    ("ID", "Idaho"),
-    ("IL", "Illinois"),
-    ("IN", "Indiana"),
-    ("IA", "Iowa"),
-    ("KS", "Kansas"),
-    ("KY", "Kentucky"),
-    ("LA", "Louisiana"),
-    ("ME", "Maine"),
-    ("MD", "Maryland"),
-    ("MA", "Massachusetts"),
-    ("MI", "Michigan"),
-    ("MN", "Minnesota"),
-    ("MS", "Mississippi"),
-    ("MO", "Missouri"),
-    ("MT", "Montana"),
-    ("NE", "Nebraska"),
-    ("NV", "Nevada"),
-    ("NH", "New Hampshire"),
-    ("NJ", "New Jersey"),
-    ("NM", "New Mexico"),
-    ("NY", "New York"),
-    ("NC", "North Carolina"),
-    ("ND", "North Dakota"),
-    ("OH", "Ohio"),
-    ("OK", "Oklahoma"),
-    ("OR", "Oregon"),
-    ("PA", "Pennsylvania"),
-    ("RI", "Rhode Island"),
-    ("SC", "South Carolina"),
-    ("SD", "South Dakota"),
-    ("TN", "Tennessee"),
-    ("TX", "Texas"),
-    ("UT", "Utah"),
-    ("VT", "Vermont"),
-    ("VA", "Virginia"),
-    ("WA", "Washington"),
-    ("WV", "West Virginia"),
-    ("WI", "Wisconsin"),
-    ("WY", "Wyoming"),
-]
-
-zip_validator = RegexValidator(
-    r"^\d{5}(-\d{4})?$", "Enter a ZIP code like 79016 or 79016-1234."
+from .models import Address, Order
+from .validators import (
+    US_STATES,
+    validate_card_number,
+    validate_expiry,
+    zip_validator,
 )
+
 cvv_validator = RegexValidator(r"^\d{3,4}$", "Enter the 3- or 4-digit CVV.")
+
+
+def style_widgets(form):
+    """Give every widget its DaisyUI class — forms style themselves."""
+    for field in form.fields.values():
+        widget = field.widget
+        if isinstance(widget, forms.CheckboxInput):
+            widget.attrs["class"] = "checkbox checkbox-primary"
+        elif isinstance(widget, forms.Select):
+            widget.attrs["class"] = "select w-full"
+        else:
+            widget.attrs["class"] = "input w-full"
 
 
 class CheckoutForm(forms.Form):
@@ -108,14 +68,18 @@ class CheckoutForm(forms.Form):
     )
     card_cvv = forms.CharField(label="CVV", max_length=4, validators=[cvv_validator])
 
+    # Ticked boxes save that section to the customer's address book once
+    # the order is placed. The view sets their starting state.
+    save_shipping_address = forms.BooleanField(
+        label="Save this address to my account", required=False
+    )
+    save_billing_address = forms.BooleanField(
+        label="Save this address to my account", required=False
+    )
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        for field in self.fields.values():
-            widget = field.widget
-            if isinstance(widget, forms.Select):
-                widget.attrs["class"] = "select w-full"
-            else:
-                widget.attrs["class"] = "input w-full"
+        style_widgets(self)
 
     # Field groups for the template — the form owns its own structure.
 
@@ -127,6 +91,22 @@ class CheckoutForm(forms.Form):
 
     def card_fields(self):
         return [self[name] for name in self.fields if name.startswith("card_")]
+
+
+class AddressForm(forms.ModelForm):
+    """Add or edit a saved address on My Addresses.
+
+    Its rules come from the ``Address`` model fields, which declare the
+    same ``US_STATES`` and ``zip_validator`` that ``CheckoutForm`` does.
+    """
+
+    class Meta:
+        model = Address
+        fields = Address.FIELDS
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        style_widgets(self)
 
 
 class OrderStatusForm(forms.ModelForm):

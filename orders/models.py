@@ -1,10 +1,12 @@
 from decimal import Decimal
 
 from django.conf import settings
-from django.db import models
+from django.db import models, transaction
 from django.utils import timezone
 
 from products.models import Product
+
+from .validators import US_STATES, zip_validator
 
 
 class Cart(models.Model):
@@ -76,6 +78,99 @@ class CartItem(models.Model):
         if self.quantity > 1:
             self.quantity -= 1
             self.save()
+
+
+class AddressManager(models.Manager):
+    def save_for(self, user, checkout_data, prefix):
+        """Save one checkout address section to the user's address book.
+
+        ``prefix`` is ``"shipping"`` or ``"billing"``. Values are trimmed,
+        and an exact match the user already has is returned instead of
+        saving a duplicate.
+        """
+        values = {
+            field: checkout_data[f"{prefix}_{field}"].strip()
+            for field in Address.FIELDS
+        }
+        existing = self.filter(user=user, **values).first()
+        return existing or self.create(user=user, **values)
+
+
+class Address(models.Model):
+    """A saved address — a typing shortcut for checkout, never a live link.
+
+    It fills either checkout section: its fields mirror the suffixes of
+    ``Order.shipping_*`` and ``Order.billing_*``. Orders copy the values,
+    so editing or deleting an address never changes a placed order.
+
+    Each user has at most one default. The model keeps that true: the
+    first address saved becomes the default, and deleting the default
+    promotes the newest remaining address. (Queryset bulk deletes bypass
+    ``delete()``; the app only deletes one instance at a time.)
+    """
+
+    FIELDS = ["name", "street", "line2", "city", "state", "zip"]
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="addresses",
+    )
+    name = models.CharField("Full name", max_length=100)
+    street = models.CharField("Street address", max_length=200)
+    line2 = models.CharField("Apt, suite, etc. (optional)", max_length=200, blank=True)
+    city = models.CharField("City", max_length=100)
+    state = models.CharField("State", max_length=2, choices=US_STATES)
+    zip = models.CharField("ZIP code", max_length=10, validators=[zip_validator])
+    is_default = models.BooleanField(default=False)
+    created_at = models.DateTimeField(default=timezone.now)
+
+    objects = AddressManager()
+
+    class Meta:
+        ordering = ["-is_default", "-created_at", "-pk"]
+        verbose_name_plural = "addresses"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user"],
+                condition=models.Q(is_default=True),
+                name="one_default_address_per_user",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.name} — {self.street}, {self.city}, {self.state} {self.zip}"
+
+    def save(self, *args, **kwargs):
+        """A user's first address becomes their default."""
+        if self._state.adding and not Address.objects.filter(user=self.user).exists():
+            self.is_default = True
+        super().save(*args, **kwargs)
+
+    @transaction.atomic
+    def delete(self, *args, **kwargs):
+        """Delete, promoting the newest remaining address if this was default."""
+        was_default, user_id = self.is_default, self.user_id
+        result = super().delete(*args, **kwargs)
+        if was_default:
+            successor = Address.objects.filter(user_id=user_id).first()
+            if successor:
+                successor.is_default = True
+                successor.save(update_fields=["is_default"])
+        return result
+
+    @transaction.atomic
+    def make_default(self):
+        """Make this the user's default, clearing the old one first."""
+        Address.objects.filter(user=self.user, is_default=True).exclude(
+            pk=self.pk
+        ).update(is_default=False)
+        self.is_default = True
+        self.save(update_fields=["is_default"])
+
+    def as_initial(self, prefix):
+        """This address as initial data for one checkout section."""
+        return {f"{prefix}_{field}": getattr(self, field) for field in self.FIELDS}
 
 
 class Order(models.Model):

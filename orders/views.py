@@ -4,22 +4,35 @@ The three HTMX interactions of the core live here: add-to-cart, quantity
 change, and line removal. Each renders a partial (never ``base.html``);
 the responses carry the navbar badge as an out-of-band swap via the
 ``oob_badge`` context flag. Checkout is conventional full-page work:
-validate the form, hand everything to ``place_order``.
+validate the form, hand everything to ``place_order``. The saved-addresses
+feature adds a fourth HTMX interaction — the checkout address picker —
+and the full-page My Addresses views.
 """
 
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
-from django.urls import reverse
+from django.urls import reverse, reverse_lazy
 from django.views import View
-from django.views.generic import DetailView, FormView, ListView, TemplateView
+from django.views.generic import (
+    CreateView,
+    DeleteView,
+    DetailView,
+    FormView,
+    ListView,
+    TemplateView,
+    UpdateView,
+)
 
 from accounts.mixins import StaffRequiredMixin
 from products.models import Product
 
-from .forms import CheckoutForm, OrderStatusForm
-from .models import Cart, CartItem, Order
+from .forms import AddressForm, CheckoutForm, OrderStatusForm
+from .models import Address, Cart, CartItem, Order
 from .services import place_order
+
+ADDRESS_SECTIONS = ("shipping", "billing")
 
 
 class CartView(LoginRequiredMixin, TemplateView):
@@ -116,16 +129,121 @@ class CheckoutView(LoginRequiredMixin, FormView):
             return redirect("orders:cart")
         return super().dispatch(request, *args, **kwargs)
 
+    def get_initial(self):
+        """Pre-fill both sections from the default address.
+
+        The Save boxes start ticked only for a customer with no saved
+        addresses yet — returning customers opt in per order.
+        """
+        initial = super().get_initial()
+        addresses = self.request.user.addresses.all()
+        default = addresses.filter(is_default=True).first()
+        if default:
+            for section in ADDRESS_SECTIONS:
+                initial.update(default.as_initial(section))
+        has_addresses = addresses.exists()
+        for section in ADDRESS_SECTIONS:
+            initial[f"save_{section}_address"] = not has_addresses
+        return initial
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["cart"] = Cart.for_user(self.request.user)
+        context["saved_addresses"] = self.request.user.addresses.all()
         return context
 
     def form_valid(self, form):
         cart = Cart.for_user(self.request.user)
         order = place_order(cart, self.request.user, form.cleaned_data)
+        # Only after the order succeeds: an address is saved for a real order.
+        for section in ADDRESS_SECTIONS:
+            if form.cleaned_data[f"save_{section}_address"]:
+                Address.objects.save_for(self.request.user, form.cleaned_data, section)
         messages.success(self.request, f"Order {order.number} placed. Thank you!")
         return redirect(reverse("orders:confirmation", kwargs={"pk": order.pk}))
+
+
+class CheckoutAddressFieldsView(LoginRequiredMixin, View):
+    """HTMX: fill one checkout address section from a saved address.
+
+    ``section`` is ``shipping`` or ``billing``; ``?address=`` is the saved
+    address pk, looked up through the owner — anyone else's pk 404s.
+    """
+
+    def get(self, request, section):
+        pk = request.GET.get("address", "")
+        if section not in ADDRESS_SECTIONS or not pk.isdigit():
+            raise Http404
+        address = get_object_or_404(Address, pk=pk, user=request.user)
+        form = CheckoutForm(initial=address.as_initial(section))
+        fields = getattr(form, f"{section}_fields")()
+        return render(
+            request, "orders/partials/_address_fields.html", {"fields": fields}
+        )
+
+
+# --- My Addresses ------------------------------------------------------------
+#
+# The customer's address book: conventional full-page CRUD. Checkout reads
+# it; the model keeps the one-default rule.
+
+
+class OwnAddressesMixin(LoginRequiredMixin):
+    """Addresses are always fetched through the owner — never by bare pk."""
+
+    def get_queryset(self):
+        return Address.objects.filter(user=self.request.user)
+
+
+class AddressListView(OwnAddressesMixin, ListView):
+    """Saved addresses, default first, then newest."""
+
+    template_name = "orders/address_list.html"
+    context_object_name = "addresses"
+
+
+class AddressCreateView(LoginRequiredMixin, CreateView):
+    model = Address
+    form_class = AddressForm
+    template_name = "orders/address_form.html"
+    success_url = reverse_lazy("orders:addresses")
+
+    def form_valid(self, form):
+        form.instance.user = self.request.user
+        messages.success(self.request, "Address saved.")
+        return super().form_valid(form)
+
+
+class AddressUpdateView(OwnAddressesMixin, UpdateView):
+    form_class = AddressForm
+    template_name = "orders/address_form.html"
+    success_url = reverse_lazy("orders:addresses")
+
+    def form_valid(self, form):
+        messages.success(self.request, "Address updated.")
+        return super().form_valid(form)
+
+
+class AddressDeleteView(OwnAddressesMixin, DeleteView):
+    """Confirm, then delete — ``Address.delete()`` promotes a new default."""
+
+    template_name = "orders/address_confirm_delete.html"
+    context_object_name = "address"
+    success_url = reverse_lazy("orders:addresses")
+
+    def form_valid(self, form):
+        messages.success(self.request, "Address deleted.")
+        return super().form_valid(form)
+
+
+class MakeDefaultAddressView(LoginRequiredMixin, View):
+    """POST-only: make one of the customer's addresses their default."""
+
+    def post(self, request, pk):
+        address = get_object_or_404(Address, pk=pk, user=request.user)
+        address.make_default()
+        messages.success(request, "Default address updated.")
+        return redirect("orders:addresses")
 
 
 class OwnOrdersMixin(LoginRequiredMixin):

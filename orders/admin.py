@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Cart, CartItem, Order, OrderItem
+from .models import Address, Cart, CartItem, Order, OrderItem
 
 
 class CartItemInline(admin.TabularInline):
@@ -13,6 +13,12 @@ class CartAdmin(admin.ModelAdmin):
     list_display = ("user", "item_count", "total")
     search_fields = ("user__username",)
     inlines = [CartItemInline]
+
+
+@admin.register(Address)
+class AddressAdmin(admin.ModelAdmin):
+    list_display = ("user", "__str__", "is_default")
+    search_fields = ("user__username",)
 
 
 class OrderItemInline(admin.TabularInline):

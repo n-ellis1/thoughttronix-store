@@ -1,0 +1,14 @@
+{# Fill one checkout section from a saved address; hidden with none saved. #}
+{% if saved_addresses %}
+  <select name="address"
+          class="select select-sm w-full"
+          aria-label="Use a saved {{ section }} address"
+          hx-get="{% url 'orders:checkout_address_fields' section %}"
+          hx-target="#{{ section }}-fields"
+          hx-trigger="change">
+    <option value="" disabled selected>Use a saved address…</option>
+    {% for address in saved_addresses %}
+      <option value="{{ address.pk }}">{{ address }}{% if address.is_default %} (default){% endif %}</option>
+    {% endfor %}
+  </select>
+{% endif %}

@@ -8,7 +8,8 @@ Demo logins (documented in the README):
 
     admin / admin123        superuser
     employee / employee123  staff, "Junior Thought Curator"
-    customer / customer123  a plain customer, with order history and a live cart
+    customer / customer123  a plain customer, with order history, a live cart,
+                            and two saved addresses
 """
 
 import random
@@ -21,7 +22,7 @@ from django.db import transaction
 from django.utils import timezone
 from django.utils.text import slugify
 
-from orders.models import Cart, Order, OrderItem
+from orders.models import Address, Cart, Order, OrderItem
 from products.models import Category, Product, Tag
 
 TAGS = [
@@ -494,6 +495,11 @@ SEED_ADDRESSES = [
     ("28 Ganglion Court", "Denver", "CO", "80202"),
 ]
 
+# The customer demo login's address book, from SEED_ADDRESSES: home is
+# saved first, so it becomes the default; the office is the alternative
+# the checkout picker offers.
+CUSTOMER_ADDRESSES = [SEED_ADDRESSES[0], SEED_ADDRESSES[1]]
+
 CARD_LAST4S = ["4242", "4111", "1881", "0005"]
 
 
@@ -507,6 +513,7 @@ class Command(BaseCommand):
         self._create_catalog(tags)
         self._create_users()
         self._create_customer_cart()
+        self._create_customer_addresses()
         self._create_orders()
 
         self.stdout.write(
@@ -585,6 +592,19 @@ class Command(BaseCommand):
         cart = Cart.for_user(customer)
         for slug, quantity in CUSTOMER_CART:
             cart.items.create(product=Product.objects.get(slug=slug), quantity=quantity)
+
+    def _create_customer_addresses(self):
+        """Two saved addresses; the first saved becomes the default."""
+        customer = get_user_model().objects.get(username="customer")
+        for street, city, state, zip_code in CUSTOMER_ADDRESSES:
+            Address.objects.create(
+                user=customer,
+                name=f"{customer.first_name} {customer.last_name}",
+                street=street,
+                city=city,
+                state=state,
+                zip=zip_code,
+            )
 
     def _create_orders(self):
         """Order history: 4 visible orders for 'customer', 48 background.
