@@ -45,6 +45,19 @@ The `seed` command creates a fixed demo world — the same one every run:
 | `uv run ruff check .`                        | Lint                                     |
 | `uv run ruff format .`                       | Format                                   |
 
+## Product images
+
+Staff upload product images from the back office. Each upload is checked
+(JPEG, PNG, or WebP; 10 MB or smaller; 50 megapixels or fewer; at least
+600 pixels on each side; no animation), resized to fit 1200 px, and saved
+as WebP under `MEDIA_ROOT/products/`. `MEDIA_ROOT` defaults to `media/` in
+the project and can be set in `.env`. A product with no image shows its
+category's placeholder.
+
+Django serves uploaded media only while `DEBUG` is on. A production
+deployment must provide its own way to serve `MEDIA_URL` (`/media/`) —
+that's out of scope here.
+
 ## Repo layout
 
 `config/` is the project package (settings, root URLs); the four apps are

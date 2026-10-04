@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load cart_extras humanize static %}
+{% load cart_extras humanize %}
 
 {% block title %}{{ product.name }} — The ThoughtTronix Store{% endblock %}
 
@@ -14,7 +14,8 @@
 
   <div class="grid grid-cols-1 gap-8 md:grid-cols-2">
     <figure class="overflow-hidden rounded-box bg-base-100 shadow-md">
-      <img src="{% static product.category.placeholder_image %}" alt="{{ product.name }}" class="w-full" />
+      <img src="{{ product.image_url }}" alt="{{ product.name }}"
+           class="aspect-[4/5] w-full bg-base-200 object-contain" />
     </figure>
 
     <div>

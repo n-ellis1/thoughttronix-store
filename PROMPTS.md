@@ -30,6 +30,190 @@ Each entry has this shape:
 
 ---
 
+## 2026-10-04 — Product images: grill-me design and handoff (no build)
+
+### Prompts
+
+1. `/grill-me` "ThoughtTronix needs real product images. The provided images
+   are in product-images/ at the repository root. Employees should upload
+   images through the back-office product forms. Every product must show its
+   uploaded image when available or the existing category placeholder,
+   including when an uploaded file is missing. Unusable uploads must be
+   rejected before saving with a clear explanation. Images should look
+   consistent across the catalog and detail pages, and pages should stay
+   fast. Help me decide the design before implementing anything."
+2. (Q1, how many images) "A. Use one optional image field on Product. Each
+   product has one uploaded image, and products without a usable image show
+   the existing category placeholder. We don't need galleries for this
+   feature."
+3. (Q2, processing) "B. Resize and re-encode images once during upload, and
+   store only the processed image. Preserve the aspect ratio and avoid
+   enlarging smaller images. If the file cannot be validated or processed,
+   reject it with a plain-language error before saving the product or image."
+4. (Q3, stored sizes) "A. Store one processed image with its longest edge
+   capped at 1200px, preserving the aspect ratio and never enlarging smaller
+   images. Use it on both catalog and detail pages, with lazy loading on
+   catalog images. Check the actual processed file sizes using the provided
+   images to confirm the reduction."
+5. (Q4, output format) "A. Save processed images as WebP at quality 80 and
+   preserve transparency when present. For animated uploads, I'd prefer
+   rejecting them with a clear explanation rather than silently saving only
+   the first frame. We can settle accepted input formats in the next
+   question."
+6. (Q5, input formats) "A. Accept JPEG, PNG, and WebP, checking the actual
+   file contents rather than trusting the filename extension. Reject other
+   formats with "Upload a JPEG, PNG, or WebP image." Reject animated images
+   with "Animated images aren't supported. Upload a still image.""
+7. (Q6, size limits) "A. Allow files up to 10 MB, up to 50 megapixels, and at
+   least 600 pixels on each side. Check file size first and pixel dimensions
+   before fully decoding or processing the image. Show plain-language errors
+   explaining the limit and the uploaded image's size. Make the messages
+   match the inclusive limits: "10 MB or smaller" and "50 megapixels or
+   fewer.""
+8. (Q7, framing) "B. Use a fixed 4:5 frame with object-contain on both catalog
+   and detail pages, without cropping. Reserve the frame space before images
+   load to prevent layout shifts. Use a theme-compatible semantic background
+   class for the frame, and apply the same framing to category placeholders."
+9. (Q8, missing-file fallback) "A. Add one Product method or property that
+   returns the uploaded image URL only when the field is set and the file
+   exists in Django storage. Otherwise, return the static URL for the
+   existing Category.placeholder_image. Both catalog and detail templates
+   should use it. Test all three cases: no image, an existing image, and a
+   missing uploaded file."
+10. (Q9, old files) "B sounds good. Delete the old image only after the
+    database change successfully commits when an image is replaced, cleared,
+    or its product is deleted. Keep the Clear checkbox so employees can switch
+    back to the placeholder, and make sure another product isn't using the
+    file before deleting it. Include tests for replacing, clearing, deleting,
+    and rolling back a change. Also, describe this as reducing unused files
+    rather than guaranteeing the media folder always matches the database
+    exactly."
+11. (Q10, file naming) "B sounds good. Give each uploaded image a new UUID
+    filename ending in .webp and store it under products/ in the media
+    folder. That way, replacing an image gives it a new URL, avoids filename
+    conflicts, and keeps the old and new files separate until the old one can
+    be deleted after the save commits."
+12. (Q11, media location and serving) "A sounds good. Let's put the media
+    folder at the project root, allow the location to be changed through
+    .env, and only have Django serve uploads when DEBUG=True. Keep uploads
+    separate from assets/ and ignored by Git. Also, if the files exist but the
+    media URL isn't working, the fallback won't catch that, so just note that
+    production needs its own way to serve images instead of saying it will
+    automatically show placeholders."
+13. (Q12, seed) "I'd go with B. Let's keep seed unchanged and upload the
+    provided images through the back office. Keep product-images/ as a
+    temporary folder that isn't committed, and don't have seed clear out
+    media/products/. I understand that seeding removes the image links and
+    I'd need to upload them again, so don't run seed against my current
+    database during the build."
+14. (Q13, back-office UX) "C sounds good. Show the current image or
+    placeholder on the edit form, add a small thumbnail to the products list,
+    and put the upload requirements beside the file picker. Include the
+    50-megapixel limit and mention that animated images aren't supported too.
+    Keep the Clear checkbox labeled "Remove image and use the category
+    placeholder." If a form fails after I've selected an image, show a note
+    telling me to choose it again. We don't need temporary storage for failed
+    uploads."
+15. (Q14, orientation and metadata) "A sounds good. Apply the photo's
+    orientation before resizing so it doesn't end up sideways, then remove the
+    location, camera, and other metadata while keeping the color profile. Add
+    tests to make sure rotated photos come out upright and the saved image no
+    longer contains EXIF data."
+16. (Q15, code location and admin) "A sounds good. Keep the upload checks and
+    image processing together in a custom ProductImageField in
+    products/forms.py, and have ProductForm use it. Make the image read-only
+    in Django admin with a preview, so uploads go through the back office and
+    follow the same rules. Just make sure the file-size and dimension checks
+    happen before anything fully decodes the image, including Django's
+    built-in validation."
+17. (Q16, delete wiring) "A sounds good. Use a post_delete signal for product
+    deletions and handle replaced or cleared images in the model's save path,
+    with cleanup happening only after the database change commits. I'm okay
+    with seed deleting the images attached to the products it removes, as
+    long as seed.py stays unchanged and it doesn't clear the whole media
+    folder. Check whether another product still uses the file before deleting
+    it, and don't run seed against my current database during the build."
+18. (Q17, which pages) "A sounds good. Show images on the catalog and category
+    pages, the product detail page, and the back-office form preview and
+    products list. Use the same image-or-placeholder logic in all of those
+    places, and leave the cart, checkout, and order pages as they are for
+    now."
+19. "No need to create a separate plan file. The design looks good, but leave
+    product-images/ out of commits without adding it to .gitignore, and make
+    sure corrupt or unreadable images also get a plain-language error before
+    anything is saved. Don't build anything yet; I'll use /handoff to carry
+    these decisions into the next session."
+20. `/handoff` "the next session implements the design we just agreed"
+21. "Read the standard session-log prompt in the PROMPTS.md header and follow
+    it to record this interview session."
+
+### Summary
+
+- **Outcome:** A seventeen-question grill-me session settled the
+  product-image design. No application code was written. Settled points:
+  - **Model and storage:** one optional `Product.image`. Pillow processes
+    each upload once: rotate upright from EXIF, cap the longest edge at
+    1200px without enlarging, strip EXIF but keep the ICC profile, and save
+    as WebP q80 named `products/<uuid>.webp`.
+  - **Validation:** all checks and processing live in a `ProductImageField`
+    in `products/forms.py`. It accepts JPEG, PNG and WebP only and rejects
+    animated images. Limits are 10 MB, 50 MP and at least 600px per side.
+    Checks run cheapest first, before any full decode.
+  - **Display:** a `Product` property returns the upload URL only if the
+    file exists, otherwise the category placeholder. Every surface uses a
+    fixed 4:5 `object-contain` frame.
+  - **File cleanup:** deletion waits for `on_commit`, runs from the save
+    path and a `post_delete` signal, and skips files another product still
+    uses.
+  - **Back office and admin:** a back-office preview, help text and list
+    thumbnails. Admin shows the image read-only.
+  - **Media serving:** `media/` is gitignored and served only in `DEBUG`.
+
+  To answer Q3, I measured the 13 provided images in a throwaway `uv`
+  environment. The originals averaged 1,965 KB, about 23 MB for a 12-card
+  page. As WebP q80 they averaged 95 KB, about 1.1 MB per page. I also
+  built a contact sheet in the scratchpad to inform the framing question.
+  The decisions were written to `HANDOFF.md`, which is untracked and not
+  committed.
+- **Deviations:** The user overrode one recommendation. On Q12 they chose B
+  (keep `seed` unchanged and upload by hand) over my A (commit
+  `product-images/` and have seed attach images, clearing `media/products/`).
+  On Q16 I left the choice to the user because A changes `seed`'s file
+  behavior; they took A on the condition that `seed.py` stays unchanged.
+  Every other answer took my recommendation and added specifics:
+  - rejecting animated uploads instead of keeping the first frame
+  - inclusive wording ("10 MB or smaller", "50 megapixels or fewer")
+  - the exact error messages and the Clear label
+  - a semantic frame background
+  - the shared-file check before deletion
+  - a rollback test
+  - the 50 MP and animation rules in the help text
+
+  The final follow-ups declined a plan file and declined adding
+  `product-images/` to `.gitignore` (leave it out of commits instead). They
+  also added a plain-language error for corrupt or unreadable images.
+- **Sideways:** Several of my statements were too strong or incomplete, and
+  most were caught by the user:
+  (1) Q9 said cleanup keeps `media/` "always" matching the database. The
+  user had it reworded as "reducing unused files."
+  (2) Q11 said a broken production media setup would fall back to
+  placeholders. The user pointed out that the fallback checks file
+  existence, not URL reachability, so it would not.
+  (3) Q12 claimed `seed` would skip the cleanup hooks. After reading
+  `seed.py:555` (a queryset delete), I corrected this myself in Q15/Q16,
+  because it depends on whether a signal or a `delete()` override is used.
+  (4) The Q6 sample messages said "under 10 MB", which contradicts the
+  inclusive limit. The user fixed the wording.
+  (5) The user flagged that Django's built-in `ImageField.to_python` decodes
+  before custom checks. The design now overrides `to_python` so size and
+  dimension checks come first.
+  (6) The design summary had no error for corrupt or unreadable files until
+  the user asked for one. Two messages were added: unrecognized files get the
+  format message, and recognized but damaged files get a "couldn't be read"
+  message.
+
+---
+
 ## 2026-09-25 — Discount codes: grill-me design, build, and Remove code control
 
 ### Prompts

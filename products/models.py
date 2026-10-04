@@ -1,9 +1,10 @@
-from django.db import models
+from django.db import models, transaction
+from django.templatetags.static import static
 from django.urls import reverse
 
 # Categories with a dedicated placeholder illustration; anything else
-# falls back to default.svg. No media handling in the core — placeholder
-# images are static files chosen by category.
+# falls back to default.svg. Products without an uploaded image show
+# their category's placeholder, a static file.
 PLACEHOLDER_CATEGORIES = {
     "home-assistants",
     "neural-implants",
@@ -72,6 +73,9 @@ class Product(models.Model):
         related_name="products",
     )
     tags = models.ManyToManyField(Tag, blank=True, related_name="products")
+    # Uploads arrive already processed by ProductImageField (products/forms.py)
+    # as <uuid>.webp, so every upload gets a fresh name under products/.
+    image = models.ImageField(upload_to="products/", blank=True)
 
     objects = ProductQuerySet.as_manager()
 
@@ -81,5 +85,42 @@ class Product(models.Model):
     def __str__(self):
         return self.name
 
+    def save(self, *args, **kwargs):
+        """Save, then delete the previous image file if it was replaced or cleared."""
+        old_name = (
+            Product.objects.filter(pk=self.pk).values_list("image", flat=True).first()
+            if self.pk
+            else None
+        )
+        super().save(*args, **kwargs)
+        if old_name and old_name != self.image.name:
+            delete_image_file_on_commit(old_name)
+
     def get_absolute_url(self):
         return reverse("products:detail", kwargs={"slug": self.slug})
+
+    @property
+    def image_url(self):
+        """URL of the uploaded image, or the category placeholder if there's no file.
+
+        Checks that the file exists in storage, not that MEDIA_URL is served.
+        """
+        if self.image and self.image.storage.exists(self.image.name):
+            return self.image.url
+        return static(self.category.placeholder_image)
+
+
+def delete_image_file_on_commit(name):
+    """Delete an image file once the transaction commits — unless still in use.
+
+    Skipped if the transaction rolls back, or if any product still references
+    the file at commit time. Reduces unused files; it doesn't guarantee that
+    storage and database stay in sync.
+    """
+    storage = Product._meta.get_field("image").storage
+
+    def delete():
+        if not Product.objects.filter(image=name).exists():
+            storage.delete(name)
+
+    transaction.on_commit(delete)

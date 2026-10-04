@@ -1,0 +1,22 @@
+{# The product image field: the saved image (or placeholder) on edit, the picker, its limits, and its errors. #}
+<div>
+  <label class="label mb-1" for="{{ field.id_for_label }}">{{ field.label }}</label>
+  <div class="flex flex-col gap-4 sm:flex-row sm:items-start">
+    {% if form.current_image_url %}
+      <img src="{{ form.current_image_url }}" alt="{{ form.instance.name }}"
+           class="aspect-[4/5] w-32 shrink-0 rounded-box bg-base-200 object-contain" />
+    {% endif %}
+    <div class="min-w-0 flex-1">
+      {{ field }}
+      <p class="mt-1 text-xs opacity-60">{{ field.help_text }}</p>
+      {% if form.image_needs_reselect %}
+        <p class="mt-1 text-sm text-warning">
+          Your image wasn't saved because the form has errors. Choose the image again before saving.
+        </p>
+      {% endif %}
+      {% for error in field.errors %}
+        <p class="mt-1 text-sm text-error">{{ error }}</p>
+      {% endfor %}
+    </div>
+  </div>
+</div>
