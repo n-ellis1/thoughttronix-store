@@ -35,8 +35,7 @@ Logic lives in models and managers; cross-model workflows get a service
 module; views stay thin.
 
 Exactly two deliberate deep modules, docstrings and type hints on every
-public function: `orders/services.py` (`place_order`, with its dormant
-`coupon_code` seam) and `dashboard/queries.py` (the dashboard's
+public function: `orders/services.py` (`place_order`), and `dashboard/queries.py` (the dashboard's
 aggregations).
 
 Idiomatic Django throughout: class-based views, model methods, custom
@@ -45,17 +44,8 @@ via environs with working defaults — the app must run with no `.env` present.
 
 ## Template conventions
 
-- Every page extends the project-level `templates/base.html` (DaisyUI navbar,
-  footer motto). DaisyUI theme: `night`, set in `assets/css/source.css` and
-  `data-theme` on `<html>`.
-- Back-office pages extend `templates/backoffice/base.html` — the staff shell
-  with the tab rail; the active tab comes from the view's `section` context
-  entry.
-- HTMX endpoints render partials from `templates/<app>/partials/_<name>.html` —
-  prefixed with an underscore, never extending `base.html`.
-- Every list view gets a designed empty state, not a blank page.
-- Styling is Tailwind + DaisyUI classes only; no crispy-forms, no JavaScript
-  beyond HTMX.
+When working on templates, styling, or HTMX, read `docs/FRONTEND.md` for
+template conventions.
 
 ## URL conventions
 
@@ -67,6 +57,4 @@ via environs with working defaults — the app must run with no `.env` present.
 
 ## Testing
 
-pytest + pytest-django. Shared fixtures live in the project-level
-`conftest.py` — plain fixtures, no factory-boy. Tests never invoke the seed
-command. The suite must be green at every phase boundary.
+When writing or changing tests, read `docs/TESTING.md` for testing conventions.
