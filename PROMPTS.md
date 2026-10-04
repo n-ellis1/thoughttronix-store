@@ -112,8 +112,7 @@ Each entry has this shape:
     pages, accounts, codes to create, and expected results without running
     seed."
 19. "Let's improve the checkout coupon controls: add a clear Remove code
-    action after a coupon has been applied. ... Send Claude this prompt in the
-    current session: After reviewing checkout, I want customers to be able to
+    action after a coupon has been applied. After reviewing checkout, I want customers to be able to
     remove an applied discount code. Add a clearly visible "Remove code"
     action next to the applied code. Clicking it should restore the
     undiscounted subtotal and Place order amount, clear the code that would be
