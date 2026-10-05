@@ -1,3 +1,27 @@
+## Product Images
+
+### Question 1
+There was only one time today I had to disagree with CLAUDE and he recommended that I go ahead seed load all the images from the temporary images folder. I know you kind of ened up saying this later in the homework but I hadnt gotten that far yet so it was the only real disagreement I had. If I did listen and go forward with seed then it would have deleted the porducts I had setup and reverted everything back to the defualt products.
+
+### Question 2
+PART 1: image = models.ImageField(upload_to="products/", blank=True) I found it in products/models.py on line 78. upload_to just stores the uploaded images in a sub folder in prducts which is set by MEDIA_ROOT. So its basically storing the images path rather than the actual image.
+
+PART 2: form method="post" enctype="multipart/form-data" class="mt-2 space-y-4" Found it in templates/products/manage_products_form.html on line 13. The enctype is needed because it makes sure the actaul file image is sent and without it you wouldnt be able see the image because it wouldnt reach Django.
+
+### Question 3
+PART 1: C:\Users\Noah Ellis\cidm3312\thoughttronix-store\media\products\3a3a0238-28bf-4e5f-bee8-188792874284.webp
+First the MEDIA_ROOT sets the main upload folder as the media folder and then the Product.image uses upload_to and places it in the products subfolder.
+
+PART 2: products/3a3a0238-28bf-4e5f-bee8-188792874284.webp | The databse will keep the image relative to MEDIA_ROOT but will keep the actual image file on disc and then upload_to will determine the products/ prefix.
+
+PART 3: http://127.0.0.1:8000/media/products/3a3a0238-28bf-4e5f-bee8-188792874284.webp | So it kind of goes back to the two main parts. MEDIA_URL will determine the /media/ part in the url and then the image field will hold the products part and webp part and then when you put them together it will tell the browser where it needs to requests the image so i can show it properly.
+
+PART 4: What makes the media url work during developement is this line of code: 
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+
+This just says when dbug mode is active to handle requests with the media URL by finding the requested file in the media folder
+
 ## Featured Products
 When I checked the featured box for a product on the admin page, it changed that product's is_featured value in the database. Its setup in products/models.py and both catalog and detail will check if the product featured is true. If it turns out to be true then it will assign the feature badge to it and if its falso then it wont assign the badge to the product.
 

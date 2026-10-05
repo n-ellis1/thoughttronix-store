@@ -30,6 +30,105 @@ Each entry has this shape:
 
 ---
 
+## 2026-10-04 — Product images: build from handoff, browser check, ThinkVision
+
+### Prompts
+
+1. "@HANDOFF.md Implement this feature. Delete HANDOFF.md after reading it,
+   and don't commit anything yet."
+2. "Give me a step-by-step browser checklist to verify the product image
+   feature, including uploading, replacing, clearing, invalid uploads, and
+   placeholder fallback. Use my existing products and don't run seed or
+   commit anything."
+3. "Append a session log to PROMPTS.md at the repo root, under today's date,
+   newest entry at the top. ..." (the standard log prompt above), followed by:
+   "Add the second session's log without duplicating the first. Include the
+   product-image work, browser verification, feature commit and push, and
+   ThinkVision being added through the back office. I generated
+   ThinkVision's image using ChatGPT image generation. Ask me for any details
+   you cannot verify."
+4. (Answering my questions about what I couldn't verify) "I did the commits
+   myself. I ran through all the steps you gave me and everything worked
+   well. I uploaded the images by hand to each matching product and all of
+   them behaved normally. I created thinkvision by myself besides the AI
+   generated photo and everything for the product worked just fine."
+
+### Summary
+
+- **Outcome:** The handoff design was built as specified, and `HANDOFF.md`
+  was deleted after reading.
+  - **Model and storage:** `Product.image` (migration
+    `0004_product_image`), Pillow 12.3, `MEDIA_ROOT`/`MEDIA_URL` (media
+    served only in `DEBUG`), `media/` gitignored, and a README note that
+    production must serve `MEDIA_URL` itself.
+  - **Validation and processing:** `ProductImageField` in
+    `products/forms.py` checks bytes, then the header, then decodes. It
+    overrides `to_python` so nothing fully decodes before the limits pass.
+  - **Display:** `Product.image_url` returns the uploaded image or the
+    category placeholder, shown in a 4:5 `object-contain` frame on the
+    catalog, category, detail, back-office form and list.
+  - **File lifecycle:** deletion runs from `Product.save()` and a
+    `post_delete` signal (`products/signals.py`). It waits for
+    `on_commit` and skips files another product still uses.
+  - **Back office and admin:** a multipart form with preview, help text,
+    the "Remove image and use the category placeholder" checkbox and a
+    re-select note. The admin shows a read-only preview.
+  - **Tests and measurement:** 69 new tests in `products/test_images.py`;
+    full suite 335 passed; `ruff check` and `ruff format --check` clean.
+    Run through the real field, the 13 provided images averaged 1,965 KB →
+    90 KB, so a 12-card page went from 23.0 MB to 1.06 MB.
+  - **Checklist:** for prompt 2, I generated 10 invalid and edge-case test
+    files in the scratchpad (outside the repo) and wrote a 13-section
+    checklist.
+
+  After the session, the user carried out the rest by hand:
+  - **Browser check:** ran every checklist step; all passed.
+  - **Provided images:** uploaded each one to its matching product through
+    the back office; all behaved normally.
+  - **Commit and push:** made and pushed the feature commit `f4c4011`
+    ("Add product image uploads and catalog display"), which also carried
+    the first 2026-10-04 log entry.
+  - **ThinkVision:** created by hand in the back office (pk 70, Accessories,
+    $349.99) and uploaded an image generated with ChatGPT. It was processed
+    to a 22 KB WebP and worked normally. The ChatGPT prompt wasn't recorded.
+
+  At logging time, 13 of 35 products had images and `media/products/` held
+  exactly 13 files.
+- **Deviations:** No recommendation was overridden; the user accepted the
+  build as delivered. Where the spec left room, I made these calls and
+  flagged them:
+  - **Animated GIFs:** they get the format message, because the spec's
+    order checks format before animation.
+  - **Extremely large images:** above Pillow's ~179 MP limit the message
+    says "over 178 megapixels", since Pillow refuses before reporting a size.
+  - **Damaged files:** a file with a JPEG/PNG/WebP signature that won't open
+    gets "couldn't be read" rather than the format message.
+  - **MPO JPEGs:** treated as stills, not as animated.
+  - **Colour profiles:** only RGB ICC profiles are kept.
+  - **Form rendering:** `FORM_RENDERER = TemplatesSetting` and
+    `django.forms` in `INSTALLED_APPS`, so the restyled widget template
+    lives in `templates/products/widgets/`.
+
+  Follow-ups: the browser checklist, and this log, for which the user asked
+  me to include the work they did outside the session. I asked about
+  anything I couldn't verify from git or the database rather than guessing.
+- **Sideways:** Nothing broke the build; these small slips were each caught
+  immediately:
+  (1) Ruff's DJ012 flagged `save()` placed after `get_absolute_url()`; I
+  moved it.
+  (2) The size-measurement script first failed with `No module named
+  'config'`. Piping it into `manage.py shell` then broke on the multi-line
+  loop. Running it with `PYTHONPATH=.` worked.
+  (3) `tailwind build` reported the stylesheet "up to date" and skipped the
+  new classes until rerun with `--force`.
+  (4) My first check for the `aspect-[4/5]` class used a mis-escaped
+  pattern and falsely reported it missing. Reading the compiled CSS showed
+  it was there.
+  I didn't run the dev server during the build, to avoid uploading into the
+  user's database; the user's browser pass covered that.
+
+---
+
 ## 2026-10-04 — Product images: grill-me design and handoff (no build)
 
 ### Prompts
