@@ -59,6 +59,9 @@
           <p class="text-sm opacity-70">
             Your password is what you sign in with. Changing it signs out your other browsers.
           </p>
+          <div class="card-actions mt-2">
+            <a href="{% url 'accounts:password_change' %}" class="btn btn-primary btn-sm">Change password</a>
+          </div>
         {% else %}
           <div class="alert alert-info" role="alert">
             <span>Password management isn't available for your account. Please contact support.</span>

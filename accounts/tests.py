@@ -281,14 +281,6 @@ def test_security_page_hides_contact_support_for_usable_password(client, custome
     assert CONTACT_SUPPORT not in page
 
 
-def test_security_page_has_no_change_password_control_yet(client, customer):
-    client.force_login(customer)
-
-    page = client.get(reverse("accounts:security")).content.decode()
-
-    assert "Change password" not in page
-
-
 # --- Email add/change and confirmation ---------------------------------------
 
 LINK_INVALID = "This link is no longer valid."
@@ -1274,3 +1266,144 @@ def test_tampered_reset_link_shows_the_invalid_page(client, confirmed_customer):
     page = client.get(url, follow=True).content.decode()
 
     assert RESET_LINK_INVALID in page
+
+
+# --- Password change ---------------------------------------------------------
+
+PASSWORD_CHANGED = (
+    "Your password has been changed. Your other browsers were signed out."
+)
+
+
+def change_password(client, old="customer123", new1=NEW_PASSWORD, new2=None):
+    return client.post(
+        reverse("accounts:password_change"),
+        {
+            "old_password": old,
+            "new_password1": new1,
+            "new_password2": new1 if new2 is None else new2,
+        },
+        follow=True,
+    )
+
+
+def test_security_page_offers_change_password(client, customer):
+    client.force_login(customer)
+
+    page = client.get(reverse("accounts:security")).content.decode()
+
+    assert "Change password" in page
+    assert reverse("accounts:password_change") in page
+
+
+def test_security_page_hides_change_password_for_unusable_password(
+    client, unusable_customer
+):
+    client.force_login(unusable_customer)
+
+    page = client.get(reverse("accounts:security")).content.decode()
+
+    assert "Change password" not in page
+    assert reverse("accounts:password_change") not in page
+
+
+def test_password_change_page_requires_sign_in(client, db):
+    url = reverse("accounts:password_change")
+
+    response = client.get(url)
+
+    assert response.status_code == HTTPStatus.FOUND
+    assert response.url == f"{reverse('accounts:login')}?next={url}"
+
+
+def test_password_change_page_returns_200(client, customer):
+    client.force_login(customer)
+
+    assert client.get(reverse("accounts:password_change")).status_code == HTTPStatus.OK
+
+
+@pytest.mark.parametrize(
+    ("data", "field"),
+    [
+        ({"old": "wrong-password"}, "old_password"),
+        ({"new2": "something-else-2026"}, "new_password2"),
+        ({"new1": "12345678"}, "new_password2"),
+        ({"new1": "password"}, "new_password2"),
+        ({"new1": "short"}, "new_password2"),
+    ],
+)
+def test_password_change_form_errors(
+    client, confirmed_customer, mailoutbox, data, field
+):
+    client.force_login(confirmed_customer)
+
+    response = change_password(client, **data)
+
+    assert response.context["form"].errors[field]
+    confirmed_customer.refresh_from_db()
+    assert confirmed_customer.check_password("customer123")
+    assert mailoutbox == []
+
+
+def test_password_change_keeps_this_browser_signed_in(client, customer):
+    client.force_login(customer)
+
+    response = change_password(client)
+
+    assert response.redirect_chain[-1][0] == reverse("accounts:security")
+    assert PASSWORD_CHANGED in flashed(response)
+    assert response.context["user"] == customer
+    customer.refresh_from_db()
+    assert customer.check_password(NEW_PASSWORD)
+    assert client.get(reverse("accounts:security")).status_code == HTTPStatus.OK
+
+
+def test_password_change_signs_out_other_sessions(client, customer):
+    elsewhere = Client()
+    elsewhere.force_login(customer)
+    assert elsewhere.get(reverse("accounts:security")).status_code == HTTPStatus.OK
+    client.force_login(customer)
+
+    change_password(client)
+
+    response = elsewhere.get(reverse("accounts:security"))
+    assert response.status_code == HTTPStatus.FOUND
+    assert response.url.startswith(reverse("accounts:login"))
+
+
+def test_password_change_sends_notice_with_reset_link(
+    client, confirmed_customer, mailoutbox
+):
+    client.force_login(confirmed_customer)
+
+    change_password(client)
+
+    assert len(mailoutbox) == 1
+    notice = mailoutbox[0]
+    assert notice.to == ["customer@example.com"]
+    assert "password was changed" in notice.subject
+    assert f"http://testserver{reverse('accounts:password_reset')}" in notice.body
+
+
+def test_password_change_notice_skips_pending_and_missing_email(
+    client, customer, mailoutbox
+):
+    customer.request_email_change("pending@example.com")
+    mailoutbox.clear()
+    client.force_login(customer)
+
+    change_password(client)
+
+    assert mailoutbox == []
+
+
+@pytest.mark.parametrize("method", ["get", "post"])
+def test_unusable_password_user_is_sent_back_from_password_change(
+    client, unusable_customer, method
+):
+    client.force_login(unusable_customer)
+
+    response = getattr(client, method)(reverse("accounts:password_change"), follow=True)
+
+    assert response.redirect_chain == [(reverse("accounts:security"), HTTPStatus.FOUND)]
+    assert any(CONTACT_SUPPORT in m for m in flashed(response))

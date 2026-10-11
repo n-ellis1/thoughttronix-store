@@ -46,6 +46,24 @@ def send_email_changed_notice(request, user, old_email):
     )
 
 
+def send_password_changed_notice(request, user):
+    """Tell the confirmed address that the password was changed, with a
+    reset link in case it wasn't the owner. No confirmed email means no
+    notice."""
+    if not user.email:
+        return
+    context = {
+        "user": user,
+        "reset_url": request.build_absolute_uri(reverse("accounts:password_reset")),
+    }
+    send_mail(
+        "Your ThoughtTronix password was changed",
+        render_to_string("accounts/emails/password_changed.txt", context),
+        None,
+        [user.email],
+    )
+
+
 def send_password_reset_notice(request, user):
     """Tell the confirmed address that the password was reset by link.
 

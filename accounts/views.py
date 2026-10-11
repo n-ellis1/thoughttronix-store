@@ -3,6 +3,7 @@ from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.views import (
     LoginView,
     LogoutView,
+    PasswordChangeView,
     PasswordResetConfirmView,
     PasswordResetDoneView,
     PasswordResetView,
@@ -15,10 +16,12 @@ from django.views.generic import CreateView, FormView, TemplateView, View
 from .emails import (
     send_email_changed_notice,
     send_email_confirmation,
+    send_password_changed_notice,
     send_password_reset_notice,
 )
 from .forms import (
     CONFIRMATION_LIMIT_MESSAGE,
+    ChangePasswordForm,
     EmailChangeForm,
     ResetPasswordForm,
     ResetRequestForm,
@@ -151,6 +154,34 @@ class EmailChangeView(LoginRequiredMixin, FormView):
             "in place until then.",
         )
         return redirect("accounts:security")
+
+
+class ChangePasswordView(SuccessMessageMixin, PasswordChangeView):
+    """Change the password with the current one in hand.
+
+    Django keeps this browser signed in and signs out every other session.
+    A notice goes to the confirmed email. Accounts without a usable
+    password are sent back to the overview with the contact-support
+    message.
+    """
+
+    form_class = ChangePasswordForm
+    template_name = "accounts/password_change.html"
+    success_url = reverse_lazy("accounts:security")
+    success_message = (
+        "Your password has been changed. Your other browsers were signed out."
+    )
+
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated and not request.user.has_usable_password():
+            messages.info(request, CONTACT_SUPPORT_MESSAGE)
+            return redirect("accounts:security")
+        return super().dispatch(request, *args, **kwargs)
+
+    def form_valid(self, form):
+        response = super().form_valid(form)
+        send_password_changed_notice(self.request, form.user)
+        return response
 
 
 class PendingEmailActionView(LoginRequiredMixin, View):

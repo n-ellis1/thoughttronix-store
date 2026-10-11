@@ -30,6 +30,98 @@ Each entry has this shape:
 
 ---
 
+## 2026-10-11 — Account Security Phase 7: password change and its notice
+
+### Prompts
+
+1. "The log looks good. Commit Phase 6 and its session log with “Complete
+   Account Security Center Phase 6”, leaving db.sqlite3 out. Push and report
+   git status. Don't restore the database or start Phase 7 yet."
+2. "@prd/account-security.md @plans/account-security.md Do Phase 7 only. Run
+   the tests and Ruff checks, then tell me how to verify it in the browser.
+   Don't run seed, commit, or start Phase 8. Leave db.sqlite3 out of commits
+   and don't restore it."
+3. "I went through all the browser verification steps and they worked. Add
+   the Phase 7 session log at the top of PROMPTS.md under today's date.
+   Include my prompts, the changes, 447 passing tests, and clean Ruff
+   checks. Keep the unusable-password case listed as automated-only if I
+   couldn't sign in to test it. Don't record any passwords, commit, or start
+   Phase 8 yet."
+
+### Summary
+
+- **Outcome:**
+  - **Phase 6 commit:** committed as `8dd7460 Complete Account Security
+    Center Phase 6` (14 files, staged by name; `db.sqlite3` is gitignored
+    and was never staged) and pushed to `origin/main`. Working tree clean
+    afterward.
+  - **Form:** `ChangePasswordForm` in `accounts/forms.py`, Django's
+    `PasswordChangeForm` with DaisyUI classes: current password, new
+    password, and confirmation, checked by the existing password validators.
+  - **View and URL:** `ChangePasswordView` in `accounts/views.py`, built on
+    Django's `PasswordChangeView`, at `accounts:password_change`
+    (`/accounts/security/password/`). Django keeps the current browser
+    signed in (`update_session_auth_hash`) and signs out every other
+    session. On success the user returns to the Security Center with "Your
+    password has been changed. Your other browsers were signed out."
+    Accounts without a usable password are redirected to the overview with
+    the contact-support message, on GET or POST.
+  - **Change notice:** `send_password_changed_notice` in
+    `accounts/emails.py` sends a plain-text notice
+    (`templates/accounts/emails/password_changed.txt`) to the confirmed
+    email with an absolute link to the password reset page. No confirmed
+    email (including a pending-only one) means no notice.
+  - **Templates:** new `templates/accounts/password_change.html`. The
+    Security Center's Password section gained a "Change password" button
+    for usable-password accounts only.
+  - **Tests:** `accounts/tests.py` gained 10 test functions (15 test cases)
+    covering:
+    - the button showing for usable-password users and hidden otherwise
+    - sign-in required, and the page loading for a signed-in user
+    - form errors for a wrong current password, a mismatched confirmation,
+      and three weak passwords, with no password change and no email
+    - staying signed in, the redirect to the overview with the message, and
+      the new password taking effect
+    - a second client signed in beforehand being signed out
+    - the notice and its reset link, and no notice without a confirmed email
+    - the unusable-password redirect with the contact-support message
+    The Phase 1 test `test_security_page_has_no_change_password_control_yet`
+    was removed, since this phase adds that control on purpose.
+  - **Automated results:** `uv run pytest` passed 447 tests (433 before
+    this phase), `uv run ruff check .` reported no problems, and
+    `uv run ruff format --check .` found all 58 files formatted. No
+    migration was needed.
+  - **Browser checks (reported by the user):** the user reported that all
+    the verification steps worked: the button, the form errors, staying
+    signed in while the other browser was signed out, the notice in the
+    terminal and its link opening the reset page, signing in with the new
+    password, and no notice for an account without a confirmed email. No
+    passwords are recorded here.
+  - **Unusable-password case:** listed as covered by automated tests only.
+    The browser step for it was optional, depending on whether such an
+    account could be signed in to, and the user's report didn't confirm it
+    separately.
+  - **Not done:** no seed run, commit, or Phase 8 work. `db.sqlite3` was not
+    touched by the code changes or restored. The user's browser check
+    changed a development account's password in it.
+- **Deviations:**
+  - The session log was written only when the user asked for it, following
+    the log's rules.
+  - No follow-up questions were asked.
+- **Sideways:**
+  - The first test run failed 2 cases (GET and POST) of the new
+    unusable-password test. It checked for an exact message in the flashed
+    list, but the contact-support message has more text after the part the
+    test constant holds. It was changed to the substring check the Phase 2
+    test already uses.
+  - `ruff format` reformatted `accounts/views.py` and `accounts/tests.py`
+    (whitespace only) before the passing run.
+  - In the Phase 7 report I said "16 new tests". The real count is 10 test
+    functions (15 cases), and with one Phase 1 test removed, the suite grew
+    by 14 (433 to 447).
+
+---
+
 ## 2026-10-11 — Account Security Phase 6: forgotten-password reset
 
 ### Prompts

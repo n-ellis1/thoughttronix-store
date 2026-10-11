@@ -32,4 +32,9 @@ urlpatterns = [
         views.EmailConfirmView.as_view(),
         name="email_confirm",
     ),
+    path(
+        "security/password/",
+        views.ChangePasswordView.as_view(),
+        name="password_change",
+    ),
 ]

@@ -1,6 +1,7 @@
 from django import forms
 from django.contrib.auth.forms import (
     AuthenticationForm,
+    PasswordChangeForm,
     PasswordResetForm,
     SetPasswordForm,
     UserChangeForm,
@@ -77,6 +78,16 @@ class ResetRequestForm(PasswordResetForm):
 class ResetPasswordForm(SetPasswordForm):
     """Set a new password from a reset link, no old password needed. The
     existing password validators still apply."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field in self.fields.values():
+            field.widget.attrs["class"] = "input w-full"
+
+
+class ChangePasswordForm(PasswordChangeForm):
+    """Django's password-change form, dressed in DaisyUI: the current
+    password, then the new one twice, checked by the existing validators."""
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
