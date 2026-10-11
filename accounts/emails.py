@@ -8,9 +8,16 @@ from django.core.mail import send_mail
 from django.template.loader import render_to_string
 from django.urls import reverse
 
+from .ratelimit import confirmation_emails
+
 
 def send_email_confirmation(request, user, token):
-    """Email a confirmation link for ``user``'s pending address."""
+    """Email a confirmation link for ``user``'s pending address.
+
+    Every confirmation email counts toward the account's budget; callers
+    check ``confirmation_emails.is_limited`` before changing anything.
+    """
+    confirmation_emails.hit(user.pk)
     context = {
         "user": user,
         "confirm_url": request.build_absolute_uri(

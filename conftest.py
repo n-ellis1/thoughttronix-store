@@ -8,9 +8,17 @@ from decimal import Decimal
 
 import pytest
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 
 from orders.models import Address, Cart, CartItem, DiscountCode
 from products.models import Category, Product, Tag
+
+
+@pytest.fixture(autouse=True)
+def clear_cache():
+    """Start every test with an empty cache, so rate-limit counters never
+    leak from one test into the next."""
+    cache.clear()
 
 
 @pytest.fixture

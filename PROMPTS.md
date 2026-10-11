@@ -30,6 +30,89 @@ Each entry has this shape:
 
 ---
 
+## 2026-10-11 — Account Security Phase 5: confirmation-email rate limit
+
+### Prompts
+
+1. "@prd/account-security.md @plans/account-security.md Do Phase 5 only. Run
+   the tests and Ruff checks, then tell me how to verify it in the browser.
+   Don't run seed, commit, or start Phase 6. Leave db.sqlite3 out of commits
+   and don't restore it."
+2. "The browser checks worked: three confirmation emails were allowed, the
+   next resend was blocked, changing the pending address couldn't bypass the
+   limit, and Cancel still worked. Signup counted toward the same budget,
+   and the newest valid link still confirmed after the budget was used up.
+   Add the Phase 5 session log to the top of PROMPTS.md under today's date.
+   Include my prompts, the changes, 411 passing tests, and clean Ruff
+   checks. Note that the 60-minute expiry was verified by automated tests.
+   Don't commit or start Phase 6 yet."
+
+### Summary
+
+- **Outcome:**
+  - **Helper:** new `accounts/ratelimit.py` with a frozen `RateLimit`
+    dataclass (`name`, `limit`, `window`) built on Django's default cache.
+    `hit(key)` counts one event, opening a window at the first counted
+    event; `is_limited(key)` reports whether the key has used up its
+    events. A key's window ends `window` after its first event, then the
+    key starts fresh, so limits are always temporary. The module docstring
+    documents that counters live in the in-process memory cache, reset on
+    restart, and aren't shared between processes. The confirmation budget
+    is `confirmation_emails`: 3 per account per hour.
+  - **Counting:** `send_email_confirmation` in `accounts/emails.py` counts
+    every confirmation email it sends, so signup, new add/change requests,
+    replacement addresses, and resends share one budget per account.
+  - **Refusals:** `EmailChangeForm.clean()` raises "You've requested several
+    confirmation emails. Please wait before requesting another." as a
+    non-field error once the budget is spent, so a refused request leaves
+    the existing pending request and its link unchanged. `EmailResendView`
+    flashes the same message as an error and sends nothing. Cancel is not
+    limited. Signup has no separate check, because a brand-new account
+    always has its full budget; its email is still counted.
+  - **Tests:** `conftest.py` gained an autouse fixture that clears the cache
+    before every test. `accounts/tests.py` gained 12 test functions (13 test
+    cases) covering:
+    - the helper: counting up to the limit, the window starting with the
+      first event, a fresh window after expiry, independent keys, and no
+      counters leaking between tests (one test run twice)
+    - the signup email counting toward the budget
+    - three new addresses spending the budget, with the fourth refused
+    - Resend refused once spent, with the pending address and Cancel still
+      shown
+    - a refused request leaving the earlier pending address and its newest
+      link working
+    - Cancel still working once spent
+    - the budget returning after 60 minutes
+    - budgets being separate per account
+  - **Automated results:** `uv run pytest` passed 411 tests (398 before
+    this phase), `uv run ruff check .` reported no problems, and
+    `uv run ruff format --check .` found all 58 files formatted.
+  - **60-minute expiry:** verified by automated tests only, using a
+    controlled clock (patched `timezone.now`), both for the helper and for
+    a new request succeeding again 60 minutes after the first email. It was
+    not checked in the browser.
+  - **Browser checks (reported by the user):** three confirmation emails
+    allowed and the next resend blocked; changing the pending address
+    unable to bypass the limit; Cancel still working; signup counting
+    toward the same budget; and the newest valid link still confirming
+    after the budget was used up.
+  - **Not done:** no seed run, commit, or Phase 6 work. `db.sqlite3` was not
+    touched or restored.
+- **Deviations:**
+  - The refused add/change request appears as a form error on the
+    change-email page rather than a redirect to the overview, so the user
+    sees it where they submitted.
+  - The session log was written only when the user asked for it, following
+    the log's rules.
+  - No follow-up questions were asked.
+- **Sideways:**
+  - `ruff format` reflowed one long line in `accounts/ratelimit.py` before
+    the checks ran; the format check then passed.
+  - The end-of-phase report to the user said "15 new tests"; the actual
+    count is 12 test functions (13 cases), which matches 398 → 411.
+
+---
+
 ## 2026-10-11 — Account Security Phase 4: signup requires an email
 
 ### Prompts

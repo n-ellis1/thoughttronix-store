@@ -7,8 +7,14 @@ from django.urls import reverse_lazy
 from django.views.generic import CreateView, FormView, TemplateView, View
 
 from .emails import send_email_changed_notice, send_email_confirmation
-from .forms import EmailChangeForm, SignInForm, SignupForm
+from .forms import (
+    CONFIRMATION_LIMIT_MESSAGE,
+    EmailChangeForm,
+    SignInForm,
+    SignupForm,
+)
 from .models import EmailAlreadyConfirmed, User
+from .ratelimit import confirmation_emails
 
 CONTACT_SUPPORT_MESSAGE = (
     "Password management isn't available for your account. Please contact support."
@@ -19,8 +25,8 @@ class SignupView(SuccessMessageMixin, CreateView):
     """Create a customer account, then hand off to the login page.
 
     The signup email becomes the new account's pending address, and its
-    confirmation link goes out right away; the confirmed email starts
-    blank. New users sign in themselves, confirmed or not — auto-login
+    confirmation link goes out right away and counts toward the new
+    account's confirmation-email budget; the confirmed email starts blank. New users sign in themselves, confirmed or not — auto-login
     after signup is left as a student exercise.
     """
 
@@ -116,6 +122,9 @@ class PendingEmailActionView(LoginRequiredMixin, View):
 
 class EmailResendView(PendingEmailActionView):
     def act(self, user):
+        if confirmation_emails.is_limited(user.pk):
+            messages.error(self.request, CONFIRMATION_LIMIT_MESSAGE)
+            return
         token = user.resend_email_link()
         send_email_confirmation(self.request, user, token)
         messages.success(

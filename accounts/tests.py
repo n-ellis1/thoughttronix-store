@@ -10,6 +10,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from accounts.models import EMAIL_LINK_LIFETIME, EmailAlreadyConfirmed
+from accounts.ratelimit import RateLimit
 
 # --- Signup -----------------------------------------------------------------
 
@@ -860,3 +861,180 @@ def test_unusable_password_user_can_cancel(client, unusable_customer):
     assert any("Canceled the change" in m for m in flashed(response))
     unusable_customer.refresh_from_db()
     assert unusable_customer.pending_email == ""
+
+
+# --- Confirmation-email rate limit -------------------------------------------
+
+LIMIT_MESSAGE = (
+    "You've requested several confirmation emails. "
+    "Please wait before requesting another."
+)
+
+
+def at(moment):
+    """Freeze ``timezone.now()`` at ``moment`` (it is patched project-wide)."""
+    return mock.patch("django.utils.timezone.now", return_value=moment)
+
+
+@pytest.fixture
+def window():
+    return RateLimit("test", limit=3, window=timedelta(hours=1))
+
+
+def test_rate_limit_allows_up_to_the_limit(window):
+    window.hit("key")
+    window.hit("key")
+    assert not window.is_limited("key")
+
+    window.hit("key")
+
+    assert window.is_limited("key")
+
+
+def test_rate_limit_window_starts_with_the_first_event(window):
+    start = timezone.now()
+    with at(start):
+        window.hit("key")
+    with at(start + timedelta(minutes=50)):
+        window.hit("key")
+    with at(start + timedelta(minutes=59)):
+        window.hit("key")
+        assert window.is_limited("key")
+
+    # Sixty minutes after the *first* event, not the last, the key is free.
+    with at(start + timedelta(minutes=60)):
+        assert not window.is_limited("key")
+
+
+def test_rate_limit_opens_a_fresh_window_after_expiry(window):
+    start = timezone.now()
+    with at(start):
+        for _ in range(3):
+            window.hit("key")
+
+    with at(start + timedelta(minutes=61)):
+        window.hit("key")
+        window.hit("key")
+        assert not window.is_limited("key")
+        window.hit("key")
+        assert window.is_limited("key")
+
+
+def test_rate_limit_keys_are_independent(window):
+    for _ in range(3):
+        window.hit("one")
+
+    assert window.is_limited("one")
+    assert not window.is_limited("two")
+
+
+@pytest.mark.parametrize("run", [1, 2])
+def test_rate_limit_counters_do_not_leak_between_tests(window, run):
+    # The second run would start limited if the first run's counts leaked.
+    assert not window.is_limited("leak")
+    for _ in range(3):
+        window.hit("leak")
+    assert window.is_limited("leak")
+
+
+@pytest.fixture
+def spent_customer(client, customer, mailoutbox):
+    """A signed-in customer who has sent all three confirmation emails:
+    one request and two resends, all for first@example.com."""
+    client.force_login(customer)
+    request_change(client, "first@example.com")
+    client.post(reverse("accounts:email_resend"))
+    client.post(reverse("accounts:email_resend"))
+    assert len(mailoutbox) == 3
+    return customer
+
+
+def test_signup_email_counts_toward_the_budget(client, db, mailoutbox):
+    signup(client)
+    client.login(username="fresh-thinker", password="neural-implant-9000")
+    client.post(reverse("accounts:email_resend"))
+    client.post(reverse("accounts:email_resend"))
+    assert len(mailoutbox) == 3
+
+    response = client.post(reverse("accounts:email_resend"), follow=True)
+
+    assert LIMIT_MESSAGE in flashed(response)
+    assert len(mailoutbox) == 3
+
+
+def test_three_new_addresses_spend_the_budget(client, customer, mailoutbox):
+    client.force_login(customer)
+    for address in ["a@example.com", "b@example.com", "c@example.com"]:
+        request_change(client, address)
+    assert len(mailoutbox) == 3
+
+    response = request_change(client, "d@example.com")
+
+    assert response.status_code == HTTPStatus.OK
+    assert LIMIT_MESSAGE in response.context["form"].non_field_errors()
+    assert len(mailoutbox) == 3
+    customer.refresh_from_db()
+    assert customer.pending_email == "c@example.com"
+
+
+def test_resend_is_refused_once_the_budget_is_spent(client, spent_customer, mailoutbox):
+    response = client.post(reverse("accounts:email_resend"), follow=True)
+
+    assert response.redirect_chain[-1][0] == reverse("accounts:security")
+    assert LIMIT_MESSAGE in flashed(response)
+    assert len(mailoutbox) == 3
+    # The pending address and Cancel stay available on the overview.
+    page = response.content.decode()
+    assert "first@example.com" in page
+    assert reverse("accounts:email_cancel") in page
+
+
+def test_refused_request_leaves_the_pending_request_and_its_link(
+    client, spent_customer, mailoutbox
+):
+    request_change(client, "second@example.com")
+
+    assert len(mailoutbox) == 3
+    spent_customer.refresh_from_db()
+    assert spent_customer.pending_email == "first@example.com"
+    client.get(confirm_path(mailoutbox[-1]))
+    spent_customer.refresh_from_db()
+    assert spent_customer.email == "first@example.com"
+
+
+def test_cancel_still_works_once_the_budget_is_spent(client, spent_customer):
+    response = client.post(reverse("accounts:email_cancel"), follow=True)
+
+    assert any("Canceled the change" in m for m in flashed(response))
+    spent_customer.refresh_from_db()
+    assert spent_customer.pending_email == ""
+
+
+def test_budget_returns_after_the_window(client, customer, mailoutbox):
+    start = timezone.now()
+    client.force_login(customer)
+    with at(start):
+        request_change(client, "first@example.com")
+        client.post(reverse("accounts:email_resend"))
+        client.post(reverse("accounts:email_resend"))
+    with at(start + timedelta(minutes=59)):
+        request_change(client, "second@example.com")
+        assert len(mailoutbox) == 3
+
+    with at(start + timedelta(minutes=60)):
+        request_change(client, "second@example.com")
+
+    assert len(mailoutbox) == 4
+    assert mailoutbox[-1].to == ["second@example.com"]
+    customer.refresh_from_db()
+    assert customer.pending_email == "second@example.com"
+
+
+def test_budgets_are_per_account(client, spent_customer, other_customer, mailoutbox):
+    client.force_login(other_customer)
+
+    request_change(client, "elsewhere@example.com", password="other123")
+
+    assert len(mailoutbox) == 4
+    other_customer.refresh_from_db()
+    assert other_customer.pending_email == "elsewhere@example.com"

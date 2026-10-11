@@ -6,8 +6,13 @@ from django.contrib.auth.forms import (
 )
 
 from .models import User
+from .ratelimit import confirmation_emails
 
 EMAIL_TAKEN_MESSAGE = "That email address is already registered to another account."
+CONFIRMATION_LIMIT_MESSAGE = (
+    "You've requested several confirmation emails. "
+    "Please wait before requesting another."
+)
 
 
 class SignupForm(UserCreationForm):
@@ -57,7 +62,9 @@ class EmailChangeForm(forms.Form):
     """Request a new confirmed email: the address plus the current password.
 
     The password check stops someone at an unattended, signed-in browser
-    from redirecting the account's recovery email.
+    from redirecting the account's recovery email. An account that has
+    spent its confirmation-email budget is refused, leaving any existing
+    pending request as it was.
     """
 
     email = forms.EmailField(label="New email address")
@@ -86,6 +93,12 @@ class EmailChangeForm(forms.Form):
         if not self.user.check_password(password):
             raise forms.ValidationError("Your current password is incorrect.")
         return password
+
+    def clean(self):
+        cleaned_data = super().clean()
+        if confirmation_emails.is_limited(self.user.pk):
+            raise forms.ValidationError(CONFIRMATION_LIMIT_MESSAGE)
+        return cleaned_data
 
 
 class AdminUserChangeForm(UserChangeForm):
