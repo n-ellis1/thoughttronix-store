@@ -30,6 +30,482 @@ Each entry has this shape:
 
 ---
 
+## 2026-10-11 — PRD rename, lesson navbar job title, and starting-point commit
+
+### Prompts
+
+1. "Before we start Phase 1, rename prd/account-security-center.md to
+   prd/account-security.md and update references to it in the current plan.
+   Keep the old quoted prompts in PROMPTS.md unchanged since those record
+   what I actually typed. Check git status and review the current changes.
+   These should be our planning files, skills, session logs, and the navbar
+   job-title change from the lesson. Don't implement any Account Security
+   phases or run seed. Tell me what's ready to commit so we can save and push
+   this starting point before Phase 1."
+2. "Let's add the lesson's job-title change first. In templates/base.html,
+   right below the "Hi, {{ user.username }}" span, add: {% if user.job_title
+   %} <span class="text-sm opacity-70">{{ user.job_title }}</span> {% endif
+   %} Just make that change, don't start Phase 1 yet."
+3. "The browser checks worked. Add a short session log to PROMPTS.md for the
+   PRD rename and job-title change, including the passing accounts tests and
+   my browser checks. Then commit all six files plus the updated log with
+   the message "Add Account Security Center planning and lesson navbar
+   update" and push to origin/main. Run git status afterward so we can
+   confirm the working tree is clean. Don't start Phase 1 yet."
+
+### Summary
+
+- **Outcome:**
+  - **PRD rename:** `prd/account-security-center.md` is now
+    `prd/account-security.md`, with its content unchanged. Both references
+    in `plans/account-security.md` were updated. The old name stays in
+    `PROMPTS.md`, in quoted prompts and an older summary, by design.
+  - **Navbar job title:** `templates/base.html` shows `user.job_title`
+    right after the "Hi, username" greeting, only when it is set. The
+    change is three lines, applied exactly as given.
+  - **Checks:** `uv run pytest accounts` passed (9 tests). The user
+    reported that their browser checks of the navbar worked.
+  - **Commit:** the six files plus this log entry are committed together
+    and pushed to `origin/main`:
+    - `templates/base.html`
+    - `PROMPTS.md`
+    - `prd/account-security.md`
+    - `plans/account-security.md`
+    - `.claude/skills/prd-to-plan/SKILL.md`
+    - `.claude/skills/to-prd/SKILL.md`
+  - **Not done:** no Account Security phase was implemented, no migration
+    or seed was run.
+- **Deviations:** None. The user chose to add the navbar change before
+  committing, and to commit it together with the planning files rather than
+  separately.
+- **Sideways:**
+  - The user expected the lesson's navbar job-title change to be among the
+    uncommitted changes. It wasn't: not in the working tree, a stash, any
+    branch, or any commit. I reported that instead of guessing, and the
+    user supplied the exact snippet.
+  - No test covers the job-title display yet; only the existing accounts
+    tests were run.
+
+---
+
+## 2026-10-11 — Account Security Center: approved tracer-bullet plan (no build)
+
+### Prompts
+
+1. `/prd-to-plan @prd/account-security-center.md` "Start fresh from the PRD
+   and current codebase. Propose the phases for my review before writing the
+   plan. The final approved plan should be saved as
+   plans/account-security.md. Do not implement anything or run seed."
+2. "Keep nine phases and keep signup after pending-request management.
+   Please adjust these points:
+   1. Put forgotten-password reset before password change, so the
+      password-change notice links to a working reset page.
+   2. Phase 1 must be a usable read-only overview. Don't show Add/Change
+      email buttons until their forms work.
+   3. In the first email-confirmation phase, ensure only the newest request
+      can be confirmed and a successfully used link cannot be reused.
+      Resend, Cancel, and the pending-status display can arrive in the next
+      phase.
+   4. Include admin handling when the pending-email fields and uniqueness
+      constraint arrive: confirmed-email edits must clear pending requests,
+      and duplicates must produce form errors. Don't leave an admin path
+      that can overwrite these rules until the final phase.
+   5. My seed restriction applies to the current development database.
+      Verify seed changes in an isolated throwaway database without touching
+      my current database or adding seed calls to the normal test suite.
+
+   Show me the revised breakdown before writing the plan. Don't implement
+   anything yet."
+3. "Yeah this breakdown looks good. Go ahead and save it to
+   plans/account-security.md. Make sure each phase says how we'll check that
+   it works, and include the rate limits and cooldowns we agreed on. Keep
+   the seed check separate from my current database and media folder. Just
+   write the plan for now, don't start building anything or run migrations
+   or seed yet."
+4. "I clicked yes on an edit approval but forgot to check which file it was.
+   Can you check git status and the diffs and tell me what changed during
+   this session? Don't change or undo anything. I know there were already
+   uncommitted changes, so keep those separate from what you just did."
+5. "The plan looks good. Just add updating the old "no email at signup"
+   wording in plans/core-platform.md to the docs phase, with a reference to
+   the new PRD. Also include a final full test suite and Ruff check. Don't
+   start implementing yet."
+6. "Add this session to the top of PROMPTS.md under today's date, keeping
+   the older entries. Record all my prompts in order, including the changes
+   I requested and the edit-approval check. Summarize how the tracer-bullet
+   plan differs from the naive draft, what we changed before approving it,
+   and that we haven't implemented anything or run migrations or seed."
+
+### Summary
+
+- **Outcome:**
+  - **Approved plan:** written to `plans/account-security.md` using the
+    `prd-to-plan` skill, starting fresh from the PRD and a reread of the
+    codebase. It covers the `accounts` app, settings, URLs, the seed command,
+    `conftest.py`, `docs/TESTING.md`, and `plans/core-platform.md`. The
+    header records the durable decisions:
+    - `accounts` owns everything, with no new models
+    - `User.email` is the confirmed address, plus pending-email fields
+    - a conditional case-insensitive uniqueness constraint
+    - the URL table
+    - 24-hour confirmation links and 1-hour reset links
+    - email settings via environs
+    - the agreed rate limits: sign-in 5 failures in 15 minutes then a
+      15-minute cooldown; reset requests 3 per lowercased email per hour,
+      refused silently; confirmation emails 3 per account per hour. The two
+      email limits use 60-minute windows from the first request; sign-in
+      uses a 15-minute window and a 15-minute cooldown. No limit ever locks
+      an account permanently.
+  - **Its nine phases**, each with stories, what to build, acceptance
+    criteria, and "How we'll check it" (automated plus manual):
+    1. read-only overview and Account nav link, no action buttons
+    2. add/change email and confirmation, with admin protection
+    3. managing a pending request (status, Resend, Cancel)
+    4. email at signup
+    5. confirmation-email rate limit (introduces the throttle helper)
+    6. forgotten-password reset
+    7. password change and its notice
+    8. sign-in and reset-request rate limits
+    9. seed, admin passwords, and docs, ending with a full `pytest`,
+       `ruff check .`, and `ruff format --check .`
+  - **How it differs from the naive draft** (the draft is described in the
+    entry below; `plans/account-security-draft.md` was no longer in the
+    working tree this session, so this comparison relies on that entry):
+    - The draft started with a horizontal foundation phase (settings,
+      fields, constraint, migration, admin) that couldn't be demoed. Its
+      read-only overview phase came second and could be demoed. In the
+      approved plan every phase is a vertical slice, from model to view to
+      template to tests, that can be demoed and checked on its own.
+    - The migration, constraint, and admin handling arrive together with
+      the first feature that needs them (Phase 2), not as a standalone
+      phase.
+    - The draft put all rate limits in one late phase. The approved plan
+      introduces the helper with the first limit that uses it (Phase 5)
+      and adds the sign-in and reset limits later (Phase 8).
+    - Reset comes before password change, so the change notice's reset
+      link works when it ships.
+    - The draft's seed check already used a throwaway database. The
+      approved plan also points the media folder at a throwaway directory
+      and checks that `db.sqlite3` and `media/` are unchanged afterwards.
+  - **Edit-approval check (prompt 4):** read-only `git status` and diffs.
+    The only file this session had written at that point was
+    `plans/account-security.md`. `PROMPTS.md`, the PRD, and both skill
+    files were uncommitted changes from before the session. `db.sqlite3`
+    was last modified 2026-10-04.
+  - **Files changed this session:** `plans/account-security.md` (new) and
+    this entry in `PROMPTS.md`. **Nothing was implemented, no migration or
+    seed was run, and nothing was committed.**
+- **Deviations:**
+  - The user kept my nine phases and kept signup after pending-request
+    management, as I recommended.
+  - The user overrode my first proposal on five points (prompt 2). That
+    proposal had password change before reset; Add/Change and Change
+    password buttons in Phase 1; newest-only and single-use links not
+    stated in the first email phase; admin handling deferred to the final
+    phase; and seed changes checked by code review only.
+  - After approval, the user added the `plans/core-platform.md` wording
+    update and the final full test and Ruff check to Phase 9 (prompt 5).
+    The core PRD's story 6 and the `SignupForm` docstring stay in Phase 4.
+  - Questions I asked: phase granularity and possible merges, signup
+    order, and how to verify the seed without running it.
+- **Sideways:**
+  - My first proposal had three gaps the user caught before approval:
+    - the password-change notice would have linked to a reset page that
+      didn't exist yet
+    - Phase 1 would have shown buttons with no working forms
+    - for seven phases, the admin could have bypassed the email rules
+  - While planning the isolated seed check, I found that
+    `products/signals.py` deletes image files when products are deleted.
+    Redirecting only the database could still have removed files from the
+    real `media/` folder, so the plan redirects `MEDIA_ROOT` too and
+    compares `db.sqlite3` and `media/` before and after.
+  - The user approved an edit without checking which file it was. The
+    read-only check confirmed it was `plans/account-security.md`, and
+    nothing else was touched.
+
+---
+
+## 2026-10-11 — Account Security Center: draft plan and /prd-to-plan breakdown (no build)
+
+### Prompts
+
+1. "clear" — I explained that `/clear` is a built-in CLI command the user
+   types themselves and listed what was already saved to files. No files
+   touched.
+2. "@prd/account-security-center.md Turn this PRD into a multi-phase
+   implementation plan and save it to plans/account-security-draft.md.
+   Decide how to divide and sequence the work. For each phase, explain what
+   it builds, how it can be tested or checked independently, and what should
+   work when it is finished. Only create the draft plan. Do not implement
+   anything or run seed."
+3. "clear" — same answer as before. I noted that the planning step wasn't
+   logged yet and that the newly opened `prd-to-plan` skill would write its
+   own plan into `plans/`.
+4. `/prd-to-plan @prd/account-security-center.md`
+5. "Before I clear, append a planning-session entry under today's date at
+   the top of PROMPTS.md, preserving existing entries. Record my prompts in
+   order, the naive plan outcome, and that I invoked /prd-to-plan before
+   clearing or moving the draft. Its proposed breakdown has not been
+   approved and no final plan has been written."
+
+### Summary
+
+- **Outcome:**
+  - **Naive draft plan:** written to `plans/account-security-draft.md`
+    without a planning skill. I read `plans/core-platform.md` and copied its
+    shape (Goal / Tasks / Verification / Out of bounds), plus a "When
+    finished" line for each phase. Before writing, I read `docs/TESTING.md`,
+    the accounts admin, mixins, and tests, `conftest.py`, the URLs, the
+    README, `.gitignore`, and `pyproject.toml`.
+  - **Its eight phases:**
+    1. foundation: settings, user fields, constraint, migration, admin
+    2. read-only overview
+    3. add/change/confirm an email
+    4. email at signup
+    5. change password
+    6. reset
+    7. rate limits
+    8. seed and docs
+  - **What else the draft records:**
+    - ground rules: never run seed; Git tracks `db.sqlite3`, so
+      `migrate` shows the database as modified; no new dependencies; no
+      agent commits
+    - four open points: case-sensitivity of the sign-in throttle key,
+      re-requesting your own confirmed address, re-requesting your own
+      pending address, and `/accounts/security/` versus the interview's
+      `/account/security/`
+  - **`/prd-to-plan`:** invoked before clearing and before moving or
+    replacing the draft. Following the skill, I proposed a nine-phase
+    vertical-slice breakdown:
+    1. overview plus change password as the tracer bullet
+    2. reset
+    3. add/change confirmed by link
+    4. managing a pending request
+    5. admin override
+    6. email at signup
+    7. sign-in throttling
+    8. reset and confirmation-email throttling
+    9. seed and docs
+
+    It also lists the durable decisions for the plan header, and I asked
+    four questions: granularity, merging or splitting phases, URLs, and
+    whether to keep or replace the draft.
+  - **Where it stands:** the user has **not** approved the breakdown, and
+    **no final plan has been written**. The draft is unchanged. Nothing was
+    implemented, no migration or seed was run, and nothing was committed.
+- **Deviations:** None. The user gave no answers that could override a
+  recommendation. The draft's four open points and the `/prd-to-plan`
+  questions are all still unanswered.
+- **Sideways:** No failures. Two things are worth flagging:
+  (1) The naive draft's first two phases are horizontal: model only, then a
+  read-only page. Neither is a demoable slice. `/prd-to-plan` exposed this,
+  and its breakdown starts instead with a tracer bullet that needs no
+  migration.
+  (2) The first version of the draft had an awkward line, "sending is
+  unlimited for one more phase-set". I reworded it to "until Phase 7"
+  right away.
+
+---
+
+## 2026-10-11 — Account Security Center: grill-me design and PRD (no build)
+
+### Prompts
+
+1. `/grill-me` "I want to design an Account Security Center for ThoughtTronix.
+   Customers need to provide an email address when signing up, change their
+   password, and reset a forgotten password through email. Help me decide how
+   these features should behave from the customer's perspective. You can
+   recommend one or two other useful account security features, and we can
+   discuss whether to include them. Interview me until we have a shared
+   understanding of the feature. Do not write a PRD, implementation plan, or
+   other documentation yet—we will use /to-prd afterward."
+2. (Q1, sign-in identifier) "Let's use A. Keep username-based sign-in and
+   require an email address at signup for account recovery."
+3. (Q2, email uniqueness) "Let's use C. Each email address should belong to
+   only one account, regardless of capitalization."
+4. (Q3, accounts without email) "Let's use B. Require email for new signups,
+   and prompt existing users without an email to add one in the Security
+   Center. Keep email uniqueness case-insensitive for non-blank addresses,
+   while allowing existing accounts to have a blank email."
+5. (Q4, changing email) "Let's use C, and require the current password when
+   adding or changing an email. Confirm the new address through an emailed
+   link before it takes effect. Keep the existing email active until
+   confirmation, then notify the old address after the change succeeds."
+6. (Q5, link lifetime and replacement) "Let's use A with a 24-hour expiry. The
+   newest request replaces the previous one. Show the pending address in the
+   Security Center with resend and cancel options. Resending should issue a
+   fresh link and invalidate the previous link. Canceling or successfully
+   confirming should also invalidate it. Check case-insensitive email
+   uniqueness both when requesting the change and when confirming it."
+7. (Q6, sign-in to confirm) "Let's use C. The valid confirmation link is
+   enough to confirm the exact pending email address, without requiring
+   sign-in. Confirming must never sign anyone in or switch the account
+   currently signed in."
+8. (Q7, after password change) "Let's use A. Keep the current browser signed
+   in, sign out other sessions, and return to the Security Center with a
+   success message. Send a password-change notification to the account's
+   current email with a link to the password reset page. If no email is set,
+   skip the notification."
+9. (Q8, reset-page response) "Let's use A. Always show "If an account exists
+   for that address, we've sent a reset link." Keep the same message for
+   unknown addresses, inactive accounts, and accounts with unusable passwords,
+   and send no email for those cases. Also remind customers to check spam and
+   double-check the address they entered if no email arrives."
+10. (Q9, after reset) "A, with a 1-hour expiration. After resetting, ask the
+    customer to sign in with their new password, invalidate existing
+    sessions, and send a notification email. Expired or used links should
+    show a clear message with an option to request another reset."
+11. (Q10, extra features) "Let's add A only: limit repeated failed sign-in
+    attempts and repeated password-reset requests. Also limit
+    email-confirmation resends to prevent inbox flooding. Keep cooldowns
+    temporary, preserve the generic password-reset response, and explain the
+    limits clearly during the interview. Leave device sign-out, recent
+    sign-in activity, and two-factor authentication out of scope."
+12. (Q11, limits and counter storage) "I accept the proposed limits and
+    messages, and choose A, Django's cache. Document that counters reset on
+    restart and aren't shared between server processes. Apply the
+    3-per-hour confirmation limit to all confirmation emails for the
+    signed-in account, including initial requests, replacement addresses, and
+    resends, so changing the pending address can't bypass it. Treat "per
+    hour" as a 60-minute window starting with the first counted request, and
+    normalize email capitalization before counting reset requests."
+13. (Q12, verifying the signup email) "Let's use B. Require an email at
+    signup, but keep it pending until confirmed. Customers can sign in
+    immediately; password resets and security notices only use a confirmed
+    address. Show a reminder in the Security Center until confirmation.
+    Please clarify the pending-address uniqueness rule before we finalize it:
+    an unconfirmed signup shouldn't reserve someone else's email indefinitely
+    and prevent its owner from registering."
+14. (Q13, what counts toward uniqueness) "I agree with A. Only confirmed
+    email addresses count toward case-insensitive uniqueness. Pending
+    addresses reserve nothing. Recheck uniqueness during confirmation. If
+    another account has already confirmed that address, refuse the change,
+    clear the conflicting pending request, and direct the customer to add a
+    different address in the Security Center. Preserve their existing
+    confirmed email, if they have one."
+15. (Q14, access and layout) "Let's use A: one Security Center overview with
+    separate email and password form pages. I agree that all signed-in users,
+    including staff and superusers, can access it, while password reset stays
+    public. Add an "Account" link beside Addresses in the signed-in
+    navigation. Label the email action "Add email" when none is confirmed and
+    "Change email" otherwise. Show pending status with resend and cancel
+    options, and return completed actions to the overview with clear
+    messages."
+16. (Q15, email delivery) "Let's use B with plain-text emails. Read email
+    configuration from .env, keeping the console backend as the default so
+    the app works without any setup. Document how to test emails through
+    terminal output and how to configure SMTP. Include placeholder settings in
+    .env.example, and keep real credentials out of Git."
+17. (Q16, seed state) "Let's use B. Treat existing seeded emails as confirmed
+    and add one demo customer with a usable password and no email. Document
+    that account so the missing-email flow is easy to test. Update the seed
+    command, but don't run it against my current database—it would erase the
+    product and uploaded images we created for the previous homework."
+18. (Q17, admin edits, plus correction) "Let's use A. Authorized admins can
+    edit the confirmed email directly without confirmation or notices. Keep
+    case-insensitive uniqueness enforced and clear any pending email request
+    when the confirmed email changes. The other defaults match, except the
+    unusable-password case. We agreed that those accounts receive no
+    password-reset email, so don't present reset as a way for them to set a
+    password. Show that password management is unavailable and direct them to
+    support; an authorized admin can set a usable password through the
+    existing admin tools. Please confirm that correction. Don't create
+    documentation or implement anything yet—I'll invoke /to-prd next."
+19. (Correction — resolving my contradictory reply) "I Agree, accounts with
+    unusable passwords cannot add or change an email because those actions
+    require the current password. Show the contact-support message instead.
+    They can still confirm, resend, or cancel an existing pending request
+    under the agreed rules. Please describe that clearly in the PRD."
+20. `/to-prd`
+21. (Correction — PRD) "Please make two corrections to the PRD: 1. In
+    Further Notes, say: "Only confirmed addresses receive password-reset
+    emails and security notices. Pending addresses receive confirmation
+    emails only. Confirmation and reset flows never automatically sign anyone
+    in. Customer security changes trigger notices as specified; admin email
+    overrides are exempt." 2. In the confirmation-email rate-limit row,
+    replace "Signed-in account" with "Account, including the newly created
+    account at signup." The initial signup confirmation counts toward the
+    same 3-per-hour budget as subsequent requests and resends. Do not
+    implement anything yet."
+22. "Append a session log to PROMPTS.md at the repo root, under today's date,
+    newest entry at the top. ..." (the standard log prompt above)
+
+### Summary
+
+- **Outcome:** A seventeen-question grill-me session settled the Account
+  Security Center design. The PRD was written to
+  `prd/account-security-center.md`. No application code, migration, or seed
+  change was made, and nothing was committed. Settled points:
+  - **Identity:** sign-in stays username-based. The email field holds the
+    *confirmed* address, and a separate *pending* address waits for
+    confirmation. Uniqueness is case-insensitive and covers confirmed,
+    non-blank addresses only. Pending addresses reserve nothing, and the
+    first account to confirm wins.
+  - **Email flows:** signup requires an email, which starts pending, and the
+    customer can sign in right away. Adding or changing an email requires the
+    current password and a 24-hour confirmation link. There is one pending
+    request at a time, and a new request, resend, cancel, or confirmation
+    invalidates older links. The link works without sign-in but never signs
+    anyone in. The old address is notified after a change.
+  - **Password flows:** changing the password uses Django's stock view; other
+    sessions are signed out and a notice is sent. Reset always shows the same
+    generic message plus a spam hint. Links last 1 hour, there's no
+    auto sign-in, and a notice is sent.
+  - **Rate limits:** 5 failed sign-ins in 15 minutes per username, 3 reset
+    requests per hour per lowercased email (throttled silently), and 3
+    confirmation emails per hour per account (signup included). Counters are
+    kept in Django's in-memory cache.
+  - **Page and operations:** an overview page with separate email and
+    password form pages, plus an "Account" nav link. Email settings come from
+    `.env` and default to the console backend; all emails are plain text.
+    Seed gets a no-email demo customer `newcustomer`. Admins can edit emails
+    directly. Accounts with unusable passwords are directed to support.
+
+  To ground the questions, I read `accounts/`, `settings.py`, the seed users,
+  `base.html`, `.env.example`, and `.gitignore`. Before Q17 I ran a read-only
+  `manage.py shell` query against the dev database. It showed 12 users, no
+  blank emails, and no case-insensitive duplicates, so the uniqueness
+  constraint will migrate cleanly. Seed was not run.
+- **Deviations:** The user overrode one recommendation. On Q4 they chose C
+  (confirm the new address by emailed link) over my B (change immediately
+  after a password check, then notify the old address). That choice led to
+  Q5, Q6, Q12, and Q13. Every other answer took my recommendation and added
+  specifics:
+  - the spam/double-check hint on the reset page (Q8)
+  - clear expired-link messages (Q9)
+  - a third limit on confirmation emails (Q10)
+  - one budget covering every confirmation email, a 60-minute window from
+    the first request, and lowercasing before counting resets (Q11)
+  - documenting the cache limitation, SMTP setup, and the demo account
+    (Q11, Q15, Q16)
+  - the "Add email"/"Change email" labels (Q14)
+  - clearing pending requests on admin edits (Q17)
+
+  Follow-up question: on Q12 the user asked me to clarify how uniqueness
+  applies to pending addresses before finalizing, which became Q13.
+- **Sideways:** Four of my statements were wrong or overstated. The user
+  caught all four:
+  (1) My Q12 recommendation said the signup uniqueness check should apply
+  to *pending* addresses too. That would let an unconfirmed signup block an
+  address's real owner indefinitely. The user flagged it, and Q13 changed
+  the rule so pending addresses reserve nothing.
+  (2) In the defaults listed with Q17, I said accounts with unusable
+  passwords would use reset to set a password. That contradicts Q8, where
+  those accounts never get a reset email. The user corrected it to "contact
+  support; an admin sets a password."
+  (3) My reply confirming that correction contradicted itself. One bullet
+  said email management "still works normally" for those accounts, and the
+  next said adding or changing an email is blocked. The user settled it:
+  add/change is blocked, while confirm/resend/cancel of an existing pending
+  request is allowed.
+  (4) The PRD's summary rule said "only confirmed addresses receive mail,"
+  which ignores confirmation emails sent to pending addresses, and it didn't
+  exempt admin overrides from notices. Its rate-limit row also said
+  "Signed-in account," which doesn't fit the confirmation sent at signup.
+  The user supplied replacement wording for both, and I applied it verbatim.
+
+---
+
 ## 2026-10-04 — Product images: build from handoff, browser check, ThinkVision
 
 ### Prompts
