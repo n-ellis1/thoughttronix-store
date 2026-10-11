@@ -1,11 +1,12 @@
 import re
-from datetime import timedelta
+from datetime import datetime, timedelta
 from http import HTTPStatus
 from unittest import mock
 
 import pytest
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
+from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
 
@@ -1038,3 +1039,238 @@ def test_budgets_are_per_account(client, spent_customer, other_customer, mailout
     assert len(mailoutbox) == 4
     other_customer.refresh_from_db()
     assert other_customer.pending_email == "elsewhere@example.com"
+
+
+# --- Forgotten-password reset ------------------------------------------------
+
+RESET_SENT = "If an account exists for that address, we've sent a reset link."
+RESET_LINK_INVALID = "This password reset link is no longer valid."
+NEW_PASSWORD = "fresh-synapse-2026"
+
+
+def reset_path(message):
+    """The reset link's path, read out of a sent email."""
+    match = re.search(
+        r"https?://[^/\s]+(/accounts/password-reset/[^/\s]+/[^/\s]+/)", message.body
+    )
+    assert match, message.body
+    return match.group(1)
+
+
+def request_reset(client, email):
+    return client.post(
+        reverse("accounts:password_reset"), {"email": email}, follow=True
+    )
+
+
+def without_csrf(page):
+    """The page with its per-request CSRF tokens blanked out."""
+    return re.sub(r'(csrfmiddlewaretoken" value="|"X-CSRFToken": ")[^"]+', r"\1", page)
+
+
+def set_new_password(client, path, password=NEW_PASSWORD):
+    """Open a reset link, then submit a new password on the form it leads to."""
+    form_path = client.get(path, follow=True).redirect_chain[-1][0]
+    return client.post(
+        form_path,
+        {"new_password1": password, "new_password2": password},
+        follow=True,
+    )
+
+
+def reset_tokens_at(moment):
+    """Run Django's reset-token clock at ``moment``."""
+    return mock.patch(
+        "django.contrib.auth.tokens.PasswordResetTokenGenerator._now",
+        return_value=moment,
+    )
+
+
+def test_login_page_links_to_password_reset(client, db):
+    page = client.get(reverse("accounts:login")).content.decode()
+
+    assert reverse("accounts:password_reset") in page
+    assert "Forgot password?" in page
+
+
+@pytest.mark.parametrize(
+    "name", ["accounts:password_reset", "accounts:password_reset_done"]
+)
+def test_password_reset_pages_are_public(client, db, name):
+    assert client.get(reverse(name)).status_code == HTTPStatus.OK
+
+
+@pytest.mark.parametrize(
+    "email", ["customer@example.com", "CUSTOMER@Example.COM", "Customer@example.com"]
+)
+def test_reset_sends_one_email_to_the_confirmed_address(
+    client, confirmed_customer, mailoutbox, email
+):
+    response = request_reset(client, email)
+
+    assert response.redirect_chain[-1][0] == reverse("accounts:password_reset_done")
+    assert RESET_SENT in response.content.decode()
+    assert len(mailoutbox) == 1
+    assert mailoutbox[0].to == ["customer@example.com"]
+    reset_path(mailoutbox[0])
+
+
+def make_unknown(customer):
+    return "nobody@example.com"
+
+
+def make_pending_only(customer):
+    customer.request_email_change("pending@example.com")
+    return "pending@example.com"
+
+
+def make_inactive(customer):
+    customer.email = "customer@example.com"
+    customer.is_active = False
+    customer.save()
+    return "customer@example.com"
+
+
+def make_unusable(customer):
+    customer.email = "customer@example.com"
+    customer.set_unusable_password()
+    customer.save()
+    return "customer@example.com"
+
+
+@pytest.mark.parametrize(
+    "setup", [make_unknown, make_pending_only, make_inactive, make_unusable]
+)
+def test_reset_reveals_nothing_and_sends_nothing(client, customer, mailoutbox, setup):
+    email = setup(customer)
+    baseline = request_reset(client, "never-registered@example.com")
+
+    response = request_reset(client, email)
+
+    assert response.redirect_chain == baseline.redirect_chain
+    page = without_csrf(response.content.decode())
+    assert page == without_csrf(baseline.content.decode())
+    assert RESET_SENT in page
+    assert mailoutbox == []
+
+
+def test_reset_page_says_to_check_spam_and_the_address(client, db):
+    page = request_reset(client, "nobody@example.com").content.decode()
+
+    assert "spam folder" in page
+    assert "double-check" in page
+
+
+def test_reset_link_sets_a_new_password_without_the_old_one(
+    client, confirmed_customer, mailoutbox
+):
+    request_reset(client, "customer@example.com")
+
+    set_new_password(client, reset_path(mailoutbox[0]))
+
+    confirmed_customer.refresh_from_db()
+    assert confirmed_customer.check_password(NEW_PASSWORD)
+
+
+@pytest.mark.parametrize("weak", ["12345678", "password", "short"])
+def test_reset_rejects_weak_passwords(client, confirmed_customer, mailoutbox, weak):
+    request_reset(client, "customer@example.com")
+
+    response = set_new_password(client, reset_path(mailoutbox[0]), password=weak)
+
+    assert response.context["form"].errors["new_password2"]
+    confirmed_customer.refresh_from_db()
+    assert confirmed_customer.check_password("customer123")
+
+
+def test_after_reset_user_signs_in_again_with_the_new_password(
+    client, confirmed_customer, mailoutbox
+):
+    request_reset(client, "customer@example.com")
+
+    response = set_new_password(client, reset_path(mailoutbox[0]))
+
+    assert response.redirect_chain[-1][0] == reverse("accounts:login")
+    assert (
+        "Your password has been reset. Please sign in with your new password."
+        in flashed(response)
+    )
+    assert not response.context["user"].is_authenticated
+    assert client.login(username="customer", password=NEW_PASSWORD)
+
+
+def test_reset_signs_out_existing_sessions(client, confirmed_customer, mailoutbox):
+    elsewhere = Client()
+    elsewhere.force_login(confirmed_customer)
+    assert elsewhere.get(reverse("accounts:security")).status_code == HTTPStatus.OK
+    request_reset(client, "customer@example.com")
+
+    set_new_password(client, reset_path(mailoutbox[0]))
+
+    response = elsewhere.get(reverse("accounts:security"))
+    assert response.status_code == HTTPStatus.FOUND
+    assert response.url.startswith(reverse("accounts:login"))
+
+
+def test_reset_sends_a_notice_to_the_confirmed_address(
+    client, confirmed_customer, mailoutbox
+):
+    request_reset(client, "customer@example.com")
+
+    set_new_password(client, reset_path(mailoutbox[0]))
+
+    assert len(mailoutbox) == 2
+    notice = mailoutbox[1]
+    assert notice.to == ["customer@example.com"]
+    assert "password was reset" in notice.subject
+    assert f"http://testserver{reverse('accounts:password_reset')}" in notice.body
+
+
+def test_used_reset_link_shows_the_invalid_page(client, confirmed_customer, mailoutbox):
+    request_reset(client, "customer@example.com")
+    path = reset_path(mailoutbox[0])
+    set_new_password(client, path)
+
+    page = client.get(path, follow=True).content.decode()
+
+    assert RESET_LINK_INVALID in page
+    assert reverse("accounts:password_reset") in page
+
+
+def test_reset_link_older_than_an_hour_shows_the_invalid_page(
+    client, confirmed_customer, mailoutbox
+):
+    start = datetime.now()
+    with reset_tokens_at(start):
+        request_reset(client, "customer@example.com")
+
+    with reset_tokens_at(start + timedelta(hours=1, seconds=1)):
+        page = client.get(reset_path(mailoutbox[0]), follow=True).content.decode()
+
+    assert RESET_LINK_INVALID in page
+    assert reverse("accounts:password_reset") in page
+
+
+def test_reset_link_just_under_an_hour_still_works(
+    client, confirmed_customer, mailoutbox
+):
+    start = datetime.now()
+    with reset_tokens_at(start):
+        request_reset(client, "customer@example.com")
+
+    with reset_tokens_at(start + timedelta(minutes=59)):
+        set_new_password(client, reset_path(mailoutbox[0]))
+
+    confirmed_customer.refresh_from_db()
+    assert confirmed_customer.check_password(NEW_PASSWORD)
+
+
+def test_tampered_reset_link_shows_the_invalid_page(client, confirmed_customer):
+    url = reverse(
+        "accounts:password_reset_confirm",
+        kwargs={"uidb64": "MQ", "token": "bad-token"},
+    )
+
+    page = client.get(url, follow=True).content.decode()
+
+    assert RESET_LINK_INVALID in page

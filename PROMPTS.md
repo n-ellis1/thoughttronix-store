@@ -30,6 +30,110 @@ Each entry has this shape:
 
 ---
 
+## 2026-10-11 — Account Security Phase 6: forgotten-password reset
+
+### Prompts
+
+1. "@prd/account-security.md @plans/account-security.md Do Phase 6 only. Run
+   the tests and Ruff checks, then tell me how to verify it in the browser.
+   Don't run seed, commit, or start Phase 7. Leave db.sqlite3 out of commits
+   and don't restore it."
+2. "All the browser checks worked: uppercase confirmed email received a
+   reset link, weak passwords were rejected, resetting returned me to
+   sign-in without logging me in, the notice was sent, the new password
+   worked, the other session was signed out, and the used link was refused.
+   Unknown and pending-only addresses showed the same generic message and
+   sent no email. Add the Phase 6 session log at the top of PROMPTS.md under
+   today's date. Include my prompts, the changes, 433 passing tests, and
+   clean Ruff checks. Note that expiry was checked by automated tests. Don't
+   record my new password, commit, or start Phase 7 yet."
+
+### Summary
+
+- **Outcome:**
+  - **Settings:** `PASSWORD_RESET_TIMEOUT = 3600` in `config/settings.py`,
+    so reset links expire after 1 hour instead of Django's 3-day default.
+  - **Forms:** `ResetRequestForm` (Django's `PasswordResetForm`) and
+    `ResetPasswordForm` (Django's `SetPasswordForm`) in `accounts/forms.py`,
+    with DaisyUI classes added. Django's own lookup already matches only
+    the confirmed `email`, ignores case, and skips inactive accounts and
+    unusable passwords, so pending addresses never get a reset link and no
+    custom lookup was needed. The new password still goes through the
+    existing password validators.
+  - **Views and URLs:** `ResetRequestView`, `ResetSentView`, and
+    `ResetConfirmView` in `accounts/views.py`, built on Django's reset
+    views, at `accounts:password_reset`, `accounts:password_reset_done`,
+    and `accounts:password_reset_confirm`. Every request lands on the same
+    "sent" page. After a reset, the user is not signed in and is sent to
+    sign-in with "Your password has been reset. Please sign in with your
+    new password." Changing the password signs out every existing session
+    (Django ties sessions to the password hash), and the used link stops
+    working.
+  - **Reset notice:** `send_password_reset_notice` in `accounts/emails.py`
+    sends a plain-text notice to the confirmed email, with a link to the
+    reset page. No confirmed email means no notice.
+  - **Templates:** request, "sent", and set-new-password pages in
+    `templates/accounts/`. The "sent" page shows "If an account exists for
+    that address, we've sent a reset link." plus a reminder to check spam
+    and double-check the address. An expired, used, or tampered link shows
+    "This password reset link is no longer valid." with a "Request another
+    reset" button. Plain-text reset-link email, subject, and reset-notice
+    templates in `templates/accounts/emails/`. The sign-in page gained a
+    "Forgot password?" link.
+  - **Tests:** `accounts/tests.py` gained 14 test functions (22 test
+    cases) covering:
+    - the sign-in page linking to the reset page, and both reset pages
+      being public
+    - one reset email to the confirmed address for three capitalizations
+    - unknown, pending-only, inactive, and unusable-password addresses
+      getting a page identical to the baseline (CSRF tokens removed before
+      comparing) and no email
+    - the spam and double-check reminder
+    - setting a new password without the old one, and weak passwords being
+      rejected
+    - no sign-in after a reset, the redirect to sign-in with the message,
+      and signing in with the new password
+    - a second client signed in beforehand being signed out
+    - the reset notice and its link
+    - used, expired, nearly expired, and tampered links
+  - **Automated results:** `uv run pytest` passed 433 tests (411 before
+    this phase), `uv run ruff check .` reported no problems, and
+    `uv run ruff format --check .` found all 58 files formatted.
+  - **1-hour expiry:** checked by automated tests only, by patching Django's
+    reset-token clock (`PasswordResetTokenGenerator._now`). A link was
+    refused at 1 hour and 1 second and still worked at 59 minutes. Expiry
+    was not checked in the browser.
+  - **Browser checks (reported by the user):** an uppercase version of a
+    confirmed email received a reset link; weak passwords were rejected;
+    resetting returned to sign-in without signing in; the notice was sent;
+    the new password worked; the other session was signed out; the used
+    link was refused; and unknown and pending-only addresses showed the
+    same generic message and sent no email. The new password is not
+    recorded here.
+  - **Not done:** no seed run, commit, or Phase 7 work. `db.sqlite3` was not
+    touched by the code changes or restored. The user's browser check
+    changed a development account's password in it.
+- **Deviations:**
+  - The reset notice links to the reset page, so the owner can take the
+    account back if the reset wasn't theirs.
+  - The session log was written only when the user asked for it, following
+    the log's rules.
+  - No follow-up questions were asked.
+- **Sideways:**
+  - A first attempt to append the tests with a shell heredoc failed with a
+    quoting error and wrote nothing. The tests were then added with the
+    file-edit tool.
+  - The first test run failed 7 cases because the expected message used an
+    HTML-escaped apostrophe (`&#x27;`), but the template writes it as a
+    plain `'`. The test constant was fixed.
+  - `ruff format` reformatted `accounts/views.py` and `accounts/tests.py`
+    (whitespace only). The accounts tests and both Ruff checks then passed
+    again.
+  - The end-of-phase report to the user said "26 new tests"; the actual
+    count is 14 test functions (22 cases), which matches 411 → 433.
+
+---
+
 ## 2026-10-11 — Account Security Phase 5: confirmation-email rate limit
 
 ### Prompts

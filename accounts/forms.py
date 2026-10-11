@@ -1,6 +1,8 @@
 from django import forms
 from django.contrib.auth.forms import (
     AuthenticationForm,
+    PasswordResetForm,
+    SetPasswordForm,
     UserChangeForm,
     UserCreationForm,
 )
@@ -51,6 +53,30 @@ class SignupForm(UserCreationForm):
 
 class SignInForm(AuthenticationForm):
     """The stock authentication form, dressed in DaisyUI."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field in self.fields.values():
+            field.widget.attrs["class"] = "input w-full"
+
+
+class ResetRequestForm(PasswordResetForm):
+    """Django's reset-request form, dressed in DaisyUI.
+
+    Its stock lookup already matches the *confirmed* email only, ignoring
+    case, and skips inactive accounts and unusable passwords, so a pending
+    address never receives a reset link.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["email"].label = "Email address"
+        self.fields["email"].widget.attrs["class"] = "input w-full"
+
+
+class ResetPasswordForm(SetPasswordForm):
+    """Set a new password from a reset link, no old password needed. The
+    existing password validators still apply."""
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

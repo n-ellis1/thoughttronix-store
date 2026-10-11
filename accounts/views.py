@@ -1,15 +1,27 @@
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.contrib.auth.views import LoginView, LogoutView
+from django.contrib.auth.views import (
+    LoginView,
+    LogoutView,
+    PasswordResetConfirmView,
+    PasswordResetDoneView,
+    PasswordResetView,
+)
 from django.contrib.messages.views import SuccessMessageMixin
 from django.shortcuts import redirect
 from django.urls import reverse_lazy
 from django.views.generic import CreateView, FormView, TemplateView, View
 
-from .emails import send_email_changed_notice, send_email_confirmation
+from .emails import (
+    send_email_changed_notice,
+    send_email_confirmation,
+    send_password_reset_notice,
+)
 from .forms import (
     CONFIRMATION_LIMIT_MESSAGE,
     EmailChangeForm,
+    ResetPasswordForm,
+    ResetRequestForm,
     SignInForm,
     SignupForm,
 )
@@ -56,6 +68,46 @@ class SignOutView(LogoutView):
         # would be wiped along with it.
         response = super().post(request, *args, **kwargs)
         messages.info(request, "You have signed out.")
+        return response
+
+
+class ResetRequestView(PasswordResetView):
+    """Email a one-hour reset link to the account with this confirmed email.
+
+    Every submission lands on the same "sent" page, whether or not an
+    email went out, so the page never reveals which addresses have
+    accounts.
+    """
+
+    form_class = ResetRequestForm
+    template_name = "accounts/password_reset.html"
+    subject_template_name = "accounts/emails/password_reset_subject.txt"
+    email_template_name = "accounts/emails/password_reset.txt"
+    success_url = reverse_lazy("accounts:password_reset_done")
+
+
+class ResetSentView(PasswordResetDoneView):
+    template_name = "accounts/password_reset_done.html"
+
+
+class ResetConfirmView(SuccessMessageMixin, PasswordResetConfirmView):
+    """Set a new password from a reset link. Public on purpose.
+
+    The link works once: the new password retires it. Nobody is signed in
+    afterward, and changing the password signs out every existing session.
+    A notice goes to the confirmed email.
+    """
+
+    form_class = ResetPasswordForm
+    template_name = "accounts/password_reset_confirm.html"
+    success_url = reverse_lazy("accounts:login")
+    success_message = (
+        "Your password has been reset. Please sign in with your new password."
+    )
+
+    def form_valid(self, form):
+        response = super().form_valid(form)
+        send_password_reset_notice(self.request, self.user)
         return response
 
 
