@@ -18,14 +18,25 @@ CONTACT_SUPPORT_MESSAGE = (
 class SignupView(SuccessMessageMixin, CreateView):
     """Create a customer account, then hand off to the login page.
 
-    New users sign in themselves — auto-login after signup is left as a
-    student exercise.
+    The signup email becomes the new account's pending address, and its
+    confirmation link goes out right away; the confirmed email starts
+    blank. New users sign in themselves, confirmed or not — auto-login
+    after signup is left as a student exercise.
     """
 
     form_class = SignupForm
     template_name = "accounts/signup.html"
     success_url = reverse_lazy("accounts:login")
-    success_message = "Account created — you can now sign in."
+    success_message = (
+        "Account created — you can now sign in. Check your inbox at %(email)s "
+        "to confirm your email address."
+    )
+
+    def form_valid(self, form):
+        response = super().form_valid(form)
+        token = self.object.request_email_change(form.cleaned_data["email"])
+        send_email_confirmation(self.request, self.object, token)
+        return response
 
 
 class SignInView(LoginView):

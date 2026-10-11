@@ -11,11 +11,23 @@ EMAIL_TAKEN_MESSAGE = "That email address is already registered to another accou
 
 
 class SignupForm(UserCreationForm):
-    """Django's stock signup fields — username plus password and confirmation.
+    """Django's stock signup fields plus a required email address.
 
-    No email: signing up asks for the minimum. The widgets carry DaisyUI
-    classes because plain Django forms own their own styling here.
+    The email is not saved as the confirmed address: the view makes it the
+    new account's *pending* address and emails a confirmation link. It is
+    still checked, ignoring case, against other accounts' confirmed emails;
+    pending addresses don't block it. The widgets carry DaisyUI classes
+    because plain Django forms own their own styling here.
     """
+
+    email = forms.EmailField(
+        label="Email address",
+        help_text="For account recovery and security notices. We'll send a "
+        "link to confirm it.",
+        widget=forms.EmailInput(attrs={"autocomplete": "email"}),
+    )
+
+    field_order = ["username", "email", "password1", "password2"]
 
     class Meta(UserCreationForm.Meta):
         model = User
@@ -24,6 +36,12 @@ class SignupForm(UserCreationForm):
         super().__init__(*args, **kwargs)
         for field in self.fields.values():
             field.widget.attrs["class"] = "input w-full"
+
+    def clean_email(self):
+        email = User.objects.normalize_email(self.cleaned_data["email"])
+        if User.objects.email_taken(email):
+            raise forms.ValidationError(EMAIL_TAKEN_MESSAGE)
+        return email
 
 
 class SignInForm(AuthenticationForm):

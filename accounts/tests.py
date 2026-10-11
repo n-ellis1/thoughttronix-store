@@ -20,16 +20,19 @@ def test_signup_page_returns_200(client, db):
     assert response.status_code == HTTPStatus.OK
 
 
+def signup(client, email="fresh@example.com", **overrides):
+    data = {
+        "username": "fresh-thinker",
+        "email": email,
+        "password1": "neural-implant-9000",
+        "password2": "neural-implant-9000",
+        **overrides,
+    }
+    return client.post(reverse("accounts:signup"), data, follow=True)
+
+
 def test_signup_creates_plain_customer(client, db):
-    response = client.post(
-        reverse("accounts:signup"),
-        {
-            "username": "fresh-thinker",
-            "password1": "neural-implant-9000",
-            "password2": "neural-implant-9000",
-        },
-        follow=True,
-    )
+    response = signup(client)
 
     user = get_user_model().objects.get(username="fresh-thinker")
     assert not user.is_staff
@@ -38,23 +41,95 @@ def test_signup_creates_plain_customer(client, db):
     # Signup hands off to the login page with a confirmation message;
     # auto-login is a student exercise, so the visitor is still anonymous.
     assert response.redirect_chain[-1][0] == reverse("accounts:login")
-    assert "Account created" in response.content.decode()
+    page = response.content.decode()
+    assert "Account created" in page
+    assert "Check your inbox at fresh@example.com" in page
     assert not response.context["user"].is_authenticated
 
 
 def test_signup_password_mismatch_shows_field_error(client, db):
-    response = client.post(
-        reverse("accounts:signup"),
-        {
-            "username": "fresh-thinker",
-            "password1": "neural-implant-9000",
-            "password2": "neural-implant-9001",
-        },
-    )
+    response = signup(client, password2="neural-implant-9001")
 
     assert response.status_code == HTTPStatus.OK
     assert response.context["form"].errors["password2"]
     assert not get_user_model().objects.filter(username="fresh-thinker").exists()
+
+
+@pytest.mark.parametrize("email", ["", "not-an-email"])
+def test_signup_requires_a_valid_email(client, db, mailoutbox, email):
+    response = signup(client, email=email)
+
+    assert response.context["form"].errors["email"]
+    assert not get_user_model().objects.filter(username="fresh-thinker").exists()
+    assert mailoutbox == []
+
+
+@pytest.mark.parametrize("email", ["taken@example.com", "TAKEN@Example.COM"])
+def test_signup_rejects_address_confirmed_elsewhere(client, db, mailoutbox, email):
+    get_user_model().objects.create_user(username="first", email="taken@example.com")
+
+    response = signup(client, email=email)
+
+    assert "already registered" in response.context["form"].errors["email"][0]
+    assert not get_user_model().objects.filter(username="fresh-thinker").exists()
+    assert mailoutbox == []
+
+
+def test_signup_allows_address_pending_elsewhere(client, customer):
+    customer.request_email_change("shared@example.com")
+
+    signup(client, email="shared@example.com")
+
+    user = get_user_model().objects.get(username="fresh-thinker")
+    assert user.pending_email == "shared@example.com"
+
+
+def test_signup_email_is_pending_with_one_confirmation_link(client, db, mailoutbox):
+    signup(client)
+
+    user = get_user_model().objects.get(username="fresh-thinker")
+    assert user.email == ""
+    assert user.pending_email == "fresh@example.com"
+    assert len(mailoutbox) == 1
+    assert mailoutbox[0].to == ["fresh@example.com"]
+    confirm_path(mailoutbox[0])
+
+
+def test_new_customer_can_sign_in_before_confirming(client, db):
+    signup(client)
+
+    response = client.post(
+        reverse("accounts:login"),
+        {"username": "fresh-thinker", "password": "neural-implant-9000"},
+    )
+
+    assert response.status_code == HTTPStatus.FOUND
+    assert client.get(reverse("accounts:security")).context["user"].is_authenticated
+
+
+def test_unconfirmed_signup_shows_reminder_and_pending_address(client, db):
+    signup(client)
+    client.login(username="fresh-thinker", password="neural-implant-9000")
+
+    page = client.get(reverse("accounts:security")).content.decode()
+
+    assert "Add an email so you can recover your account." in page
+    assert "fresh@example.com" in page
+    assert "Link sent" in page
+    assert reverse("accounts:email_resend") in page
+    assert reverse("accounts:email_cancel") in page
+
+
+def test_signup_link_confirms_without_a_change_notice(client, db, mailoutbox):
+    signup(client)
+
+    page = client.get(confirm_path(mailoutbox[0])).content.decode()
+
+    assert "Your email address is confirmed" in page
+    user = get_user_model().objects.get(username="fresh-thinker")
+    assert user.email == "fresh@example.com"
+    assert user.pending_email == ""
+    assert len(mailoutbox) == 1
 
 
 # --- Login and logout --------------------------------------------------------

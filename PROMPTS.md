@@ -30,6 +30,79 @@ Each entry has this shape:
 
 ---
 
+## 2026-10-11 — Account Security Phase 4: signup requires an email
+
+### Prompts
+
+1. "@prd/account-security.md @plans/account-security.md Do Phase 4 only. Run
+   the tests and Ruff checks, then tell me how to verify it in the browser.
+   Don't run seed, commit, or start Phase 5."
+2. "All the browser checks worked: required and invalid email errors,
+   confirmed-email duplicates ignoring capitalization, signup sending a
+   confirmation email, signing in before confirmation, the pending reminder
+   and buttons, and confirmation clearing the reminder without sending a
+   change notice. Two accounts could also sign up with the same unconfirmed
+   email. Add the Phase 4 session log at the top of PROMPTS.md under today's
+   date. Record my prompts, the changes, 398 passing tests, and the clean
+   Ruff checks. Don't commit or start Phase 5 yet."
+
+### Summary
+
+- **Outcome:**
+  - **Form:** `SignupForm` gained a required **Email address** field,
+    ordered between username and password. `clean_email` normalizes the
+    address and rejects one that another account has already confirmed,
+    ignoring case, with the shared "already registered" message. Another
+    account's pending address doesn't block signup. The field isn't in
+    `Meta.fields`, so it's never saved as the confirmed email. The
+    docstring that said signup asks for no email was rewritten.
+  - **View:** `SignupView.form_valid` saves the account (confirmed email
+    blank), makes the signup address its pending address through Phase 2's
+    `request_email_change()`, and sends the confirmation link right away.
+    Signup still redirects to sign-in, with no auto sign-in. The success
+    message now reads "Account created — you can now sign in. Check your
+    inbox at <address> to confirm your email address."
+  - **Template:** no change. The signup template already renders every
+    field and its help text, and the Security Center already showed the
+    reminder plus the pending address with Resend and Cancel after Phase 3.
+  - **Core PRD:** story 6 in `prd/core-platform.md` now says signup
+    requires an email, with a note pointing to `prd/account-security.md`.
+  - **Tests:** the existing signup tests in `accounts/tests.py` were
+    switched to a shared `signup()` helper that includes an email. New
+    tests cover:
+    - a blank or invalid email producing a field error, with no account
+      and no email sent
+    - an address another account has confirmed, in two capitalizations,
+      showing "already registered"
+    - an address another account has only pending being accepted
+    - the new account having a blank confirmed email, the signup address
+      as pending, and exactly one confirmation email to that address
+    - signing in right after signup, before confirming
+    - the Security Center reminder, pending address, "Link sent", Resend,
+      and Cancel for an unconfirmed new account
+    - the signup link confirming the address with no change notice sent
+  - **Automated results:** `uv run pytest` passed 398 tests (389 before
+    this phase), `uv run ruff check .` reported no problems, and
+    `uv run ruff format --check .` found all 57 files formatted.
+  - **Browser checks (reported by the user):** required and invalid email
+    errors; confirmed-email duplicates rejected ignoring capitalization;
+    signup sending a confirmation email; signing in before confirming; the
+    pending reminder and buttons on the Security Center; confirmation
+    clearing the reminder with no change notice; and two accounts signing
+    up with the same unconfirmed email.
+  - **Not done:** no seed run, commit, or Phase 5 work. The confirmation
+    rate limit, including counting the signup email, is Phase 5.
+- **Deviations:**
+  - The success message includes the signup address so the customer can
+    spot a typo. The plan only asked for a "check your inbox" message.
+  - The session log was written only when the user asked for it, following
+    the log's rules.
+  - No follow-up questions were asked.
+- **Sideways:** nothing went wrong. The suite and Ruff were green on the
+  first run.
+
+---
+
 ## 2026-10-11 — Account Security Phase 3: managing a pending request (Resend/Cancel)
 
 ### Prompts
