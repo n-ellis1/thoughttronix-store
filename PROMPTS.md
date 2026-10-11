@@ -30,6 +30,78 @@ Each entry has this shape:
 
 ---
 
+## 2026-10-11 — Account Security Phase 3: managing a pending request (Resend/Cancel)
+
+### Prompts
+
+1. "@prd/account-security.md @plans/account-security.md Do Phase 3 only. Run
+   the tests and Ruff checks, then tell me how to verify it in the browser.
+   Don't run seed, commit, or start Phase 4."
+2. "The browser checks all worked: pending status, Resend replacing the old
+   link, confirmation clearing the pending section, Cancel keeping the
+   confirmed email and invalidating the link, and both action URLs returning
+   405 when opened directly. Add the Phase 3 session log at the top of
+   PROMPTS.md under today's date. Include my prompts, the changes, 389
+   passing tests, clean Ruff checks, and the browser results. Make clear
+   that expiry and unusable-password cases were checked through automated
+   tests. Don't commit or start Phase 4 yet."
+
+### Summary
+
+- **Outcome:**
+  - **Model:** `User.resend_email_link()` issues a fresh link for the same
+    pending address. Earlier links stop working, and the 24-hour clock
+    restarts. Cancel reuses Phase 2's `clear_pending_email()`. No migration
+    was needed.
+  - **Views and URLs:** `PendingEmailActionView` is a shared base that
+    requires sign-in and accepts only POST, so a GET returns 405.
+    `EmailResendView` (`accounts:email_resend`) and `EmailCancelView`
+    (`accounts:email_cancel`) build on it. Both return to the overview with
+    a success message. With nothing pending, both redirect to the overview
+    with "You have no pending email change." and send nothing. These
+    actions don't need the current password, so accounts with an unusable
+    password can use them; add/change stays blocked for those accounts.
+  - **Template:** the overview's email section shows the pending address
+    with a **Link sent** or **Link expired** badge, plus **Resend** and
+    **Cancel** buttons as POST forms with CSRF tokens.
+  - **Tests:** `accounts/tests.py` gained a "Managing a pending request"
+    section with 11 test functions (14 runs). They cover:
+    - the pending address with "Link sent", and "Link expired" after 24
+      hours (time controlled by backdating `email_link_sent_at`)
+    - no pending block when nothing is pending
+    - Resend sending one new email, the old link refused, and the new link
+      confirming
+    - Resend making an expired request confirmable again
+    - Cancel clearing the request, refusing its link, and keeping the
+      confirmed email
+    - GET returning 405 and sign-in being required, for both actions
+    - the harmless no-pending case, for both actions
+    - an unusable-password account resending, confirming, and canceling
+  - **Automated results:** `uv run pytest` passed 389 tests (375 before
+    this phase), `uv run ruff check .` reported no problems, and
+    `uv run ruff format --check .` found all 57 files formatted.
+  - **Browser checks (reported by the user):** the pending address and
+    status showed after a request; Resend replaced the old link (the old
+    link was refused and the new one worked); confirming cleared the pending
+    section; Cancel kept the confirmed email and made the link invalid; and
+    opening both action URLs directly returned 405.
+  - **Checked by automated tests only:** the "Link expired" badge after 24
+    hours, Resend on an expired request, and the unusable-password path
+    (resend, cancel, and confirm). None of these was checked in the
+    browser.
+  - **Not done:** no seed run, commit, or Phase 4 work.
+- **Deviations:**
+  - Resend is allowed on an expired request and gives it a fresh 24-hour
+    link. The plan didn't say either way. This matches the PRD's "get a new
+    one if the first email got lost or expired."
+  - The session log was written only when the user asked for it, following
+    the log's rules.
+  - No follow-up questions were asked.
+- **Sideways:** nothing went wrong. The suite and Ruff were green on the
+  first run.
+
+---
+
 ## 2026-10-11 — Account Security Phase 2: add/change email, confirmation, admin protection
 
 ### Prompts

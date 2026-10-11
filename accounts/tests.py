@@ -620,3 +620,168 @@ def test_admin_duplicate_email_is_a_form_error(
     assert "already registered" in errors[0]
     confirmed_customer.refresh_from_db()
     assert confirmed_customer.email == "customer@example.com"
+
+
+# --- Managing a pending request ----------------------------------------------
+
+NO_PENDING = "You have no pending email change."
+
+
+def flashed(response):
+    return [str(m) for m in response.context["messages"]]
+
+
+@pytest.fixture
+def unusable_customer(customer):
+    customer.set_unusable_password()
+    customer.save()
+    return customer
+
+
+def test_overview_shows_pending_address_with_link_sent(client, customer):
+    customer.request_email_change("new@example.com")
+    client.force_login(customer)
+
+    page = client.get(reverse("accounts:security")).content.decode()
+
+    assert "new@example.com" in page
+    assert "Link sent" in page
+    assert "Link expired" not in page
+    assert reverse("accounts:email_resend") in page
+    assert reverse("accounts:email_cancel") in page
+
+
+def test_overview_shows_link_expired_after_24_hours(client, customer):
+    customer.request_email_change("new@example.com")
+    get_user_model().objects.filter(pk=customer.pk).update(
+        email_link_sent_at=timezone.now() - EMAIL_LINK_LIFETIME - timedelta(seconds=1)
+    )
+    client.force_login(customer)
+
+    page = client.get(reverse("accounts:security")).content.decode()
+
+    assert "new@example.com" in page
+    assert "Link expired" in page
+    assert "Link sent" not in page
+
+
+def test_overview_hides_pending_block_without_a_request(client, customer):
+    client.force_login(customer)
+
+    page = client.get(reverse("accounts:security")).content.decode()
+
+    assert "Waiting for confirmation" not in page
+    assert reverse("accounts:email_resend") not in page
+    assert reverse("accounts:email_cancel") not in page
+
+
+def test_resend_sends_new_link_and_retires_the_old_one(client, customer, mailoutbox):
+    client.force_login(customer)
+    request_change(client, "new@example.com")
+
+    response = client.post(reverse("accounts:email_resend"), follow=True)
+
+    assert response.redirect_chain[-1][0] == reverse("accounts:security")
+    assert any("We sent a new confirmation link" in m for m in flashed(response))
+    assert len(mailoutbox) == 2
+    assert mailoutbox[1].to == ["new@example.com"]
+    old_link, new_link = (confirm_path(m) for m in mailoutbox)
+    assert LINK_INVALID in client.get(old_link).content.decode()
+    client.get(new_link)
+    customer.refresh_from_db()
+    assert customer.email == "new@example.com"
+
+
+def test_resend_revives_an_expired_request(client, customer, mailoutbox):
+    customer.request_email_change("new@example.com")
+    get_user_model().objects.filter(pk=customer.pk).update(
+        email_link_sent_at=timezone.now() - EMAIL_LINK_LIFETIME - timedelta(seconds=1)
+    )
+    client.force_login(customer)
+
+    client.post(reverse("accounts:email_resend"))
+    client.get(confirm_path(mailoutbox[0]))
+
+    customer.refresh_from_db()
+    assert customer.email == "new@example.com"
+
+
+def test_cancel_clears_request_and_retires_the_link(
+    client, confirmed_customer, mailoutbox
+):
+    client.force_login(confirmed_customer)
+    request_change(client, "new@example.com")
+
+    response = client.post(reverse("accounts:email_cancel"), follow=True)
+
+    assert response.redirect_chain[-1][0] == reverse("accounts:security")
+    assert any("Canceled the change to new@example.com" in m for m in flashed(response))
+    assert len(mailoutbox) == 1
+    confirmed_customer.refresh_from_db()
+    assert confirmed_customer.pending_email == ""
+    assert confirmed_customer.email == "customer@example.com"
+    assert LINK_INVALID in client.get(confirm_path(mailoutbox[0])).content.decode()
+    confirmed_customer.refresh_from_db()
+    assert confirmed_customer.email == "customer@example.com"
+
+
+@pytest.mark.parametrize("name", ["accounts:email_resend", "accounts:email_cancel"])
+def test_pending_actions_reject_get(client, customer, name):
+    customer.request_email_change("new@example.com")
+    client.force_login(customer)
+
+    response = client.get(reverse(name))
+
+    assert response.status_code == HTTPStatus.METHOD_NOT_ALLOWED
+    customer.refresh_from_db()
+    assert customer.pending_email == "new@example.com"
+
+
+@pytest.mark.parametrize("name", ["accounts:email_resend", "accounts:email_cancel"])
+def test_pending_actions_require_sign_in(client, db, mailoutbox, name):
+    url = reverse(name)
+
+    response = client.post(url)
+
+    assert response.url == f"{reverse('accounts:login')}?next={url}"
+    assert mailoutbox == []
+
+
+@pytest.mark.parametrize("name", ["accounts:email_resend", "accounts:email_cancel"])
+def test_pending_actions_without_a_request_are_harmless(
+    client, confirmed_customer, mailoutbox, name
+):
+    client.force_login(confirmed_customer)
+
+    response = client.post(reverse(name), follow=True)
+
+    assert response.redirect_chain[-1][0] == reverse("accounts:security")
+    assert NO_PENDING in flashed(response)
+    assert mailoutbox == []
+    confirmed_customer.refresh_from_db()
+    assert confirmed_customer.email == "customer@example.com"
+
+
+def test_unusable_password_user_can_resend_and_confirm(
+    client, unusable_customer, mailoutbox
+):
+    unusable_customer.request_email_change("new@example.com")
+    client.force_login(unusable_customer)
+
+    response = client.post(reverse("accounts:email_resend"), follow=True)
+    client.get(confirm_path(mailoutbox[0]))
+
+    assert any("We sent a new confirmation link" in m for m in flashed(response))
+    unusable_customer.refresh_from_db()
+    assert unusable_customer.email == "new@example.com"
+
+
+def test_unusable_password_user_can_cancel(client, unusable_customer):
+    unusable_customer.request_email_change("new@example.com")
+    client.force_login(unusable_customer)
+
+    response = client.post(reverse("accounts:email_cancel"), follow=True)
+
+    assert any("Canceled the change" in m for m in flashed(response))
+    unusable_customer.refresh_from_db()
+    assert unusable_customer.pending_email == ""

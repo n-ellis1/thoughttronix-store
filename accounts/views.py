@@ -4,7 +4,7 @@ from django.contrib.auth.views import LoginView, LogoutView
 from django.contrib.messages.views import SuccessMessageMixin
 from django.shortcuts import redirect
 from django.urls import reverse_lazy
-from django.views.generic import CreateView, FormView, TemplateView
+from django.views.generic import CreateView, FormView, TemplateView, View
 
 from .emails import send_email_changed_notice, send_email_confirmation
 from .forms import EmailChangeForm, SignInForm, SignupForm
@@ -82,6 +82,46 @@ class EmailChangeView(LoginRequiredMixin, FormView):
             "in place until then.",
         )
         return redirect("accounts:security")
+
+
+class PendingEmailActionView(LoginRequiredMixin, View):
+    """POST-only base for acting on the signed-in user's pending email.
+
+    Open to accounts without a usable password too: these actions don't
+    need the current password. With nothing pending, the user is sent
+    back to the overview with a harmless message.
+    """
+
+    def post(self, request):
+        if not request.user.pending_email:
+            messages.info(request, "You have no pending email change.")
+        else:
+            self.act(request.user)
+        return redirect("accounts:security")
+
+    def act(self, user):
+        raise NotImplementedError
+
+
+class EmailResendView(PendingEmailActionView):
+    def act(self, user):
+        token = user.resend_email_link()
+        send_email_confirmation(self.request, user, token)
+        messages.success(
+            self.request,
+            f"We sent a new confirmation link to {user.pending_email}. "
+            "Earlier links no longer work.",
+        )
+
+
+class EmailCancelView(PendingEmailActionView):
+    def act(self, user):
+        pending = user.pending_email
+        user.clear_pending_email()
+        messages.success(
+            self.request,
+            f"Canceled the change to {pending}. Its confirmation link no longer works.",
+        )
 
 
 class EmailConfirmView(TemplateView):

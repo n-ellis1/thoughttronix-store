@@ -103,6 +103,13 @@ class User(AbstractUser):
             {"user": self.pk, "nonce": self.email_token}, salt=EMAIL_CONFIRM_SALT
         )
 
+    def resend_email_link(self):
+        """Issue a fresh link for the same pending address and return its token.
+
+        Earlier links stop working, and the 24-hour clock restarts.
+        """
+        return self.request_email_change(self.pending_email)
+
     def clear_pending_email(self, save=True):
         """Drop the pending request; any outstanding link stops working."""
         self.pending_email = ""
