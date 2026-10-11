@@ -78,8 +78,8 @@ class ResetRequestView(PasswordResetView):
     """Email a one-hour reset link to the account with this confirmed email.
 
     Every submission lands on the same "sent" page, whether or not an
-    email went out, so the page never reveals which addresses have
-    accounts.
+    email went out (or the address was throttled), so the page never
+    reveals which addresses have accounts.
     """
 
     form_class = ResetRequestForm

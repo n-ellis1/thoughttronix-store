@@ -11,7 +11,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from accounts.models import EMAIL_LINK_LIFETIME, EmailAlreadyConfirmed
-from accounts.ratelimit import RateLimit
+from accounts.ratelimit import RateLimit, reset_requests
 
 # --- Signup -----------------------------------------------------------------
 
@@ -1407,3 +1407,199 @@ def test_unusable_password_user_is_sent_back_from_password_change(
 
     assert response.redirect_chain == [(reverse("accounts:security"), HTTPStatus.FOUND)]
     assert any(CONTACT_SUPPORT in m for m in flashed(response))
+
+
+# --- Sign-in and reset-request throttling ------------------------------------
+
+SIGN_IN_LIMITED = "Too many failed sign-in attempts. Try again in 15 minutes."
+
+
+def sign_in(client, username="customer", password="customer123"):
+    return client.post(
+        reverse("accounts:login"), {"username": username, "password": password}
+    )
+
+
+def fail_sign_ins(client, times, username="customer"):
+    for _ in range(times):
+        response = sign_in(client, username=username, password="wrong-guess")
+        assert response.status_code == HTTPStatus.OK
+        assert SIGN_IN_LIMITED not in response.context["form"].non_field_errors()
+
+
+def is_signed_in(client):
+    return client.get(reverse("accounts:security")).status_code == HTTPStatus.OK
+
+
+def test_rate_limit_cooldown_runs_from_the_event_that_hits_the_limit():
+    lock = RateLimit(
+        "test", limit=2, window=timedelta(minutes=15), cooldown=timedelta(minutes=15)
+    )
+    start = timezone.now()
+    with at(start):
+        lock.hit("key")
+    with at(start + timedelta(minutes=14)):
+        lock.hit("key")
+
+    # The window alone would close at minute 15; the cooldown holds to 29.
+    with at(start + timedelta(minutes=28, seconds=59)):
+        assert lock.is_limited("key")
+    with at(start + timedelta(minutes=29)):
+        assert not lock.is_limited("key")
+
+
+def test_rate_limit_clear_forgets_the_count(window):
+    for _ in range(3):
+        window.hit("key")
+
+    window.clear("key")
+
+    assert not window.is_limited("key")
+
+
+def test_five_failures_lock_the_username_even_for_the_right_password(client, customer):
+    fail_sign_ins(client, 5)
+
+    response = sign_in(client)
+
+    assert response.status_code == HTTPStatus.OK
+    assert SIGN_IN_LIMITED in response.context["form"].non_field_errors()
+    assert SIGN_IN_LIMITED in response.content.decode()
+    assert not is_signed_in(client)
+
+
+def test_four_failures_do_not_lock(client, customer):
+    fail_sign_ins(client, 4)
+
+    response = sign_in(client)
+
+    assert response.status_code == HTTPStatus.FOUND
+    assert is_signed_in(client)
+
+
+def test_unknown_username_is_throttled_the_same_way(client, db):
+    fail_sign_ins(client, 5, username="nobody-here")
+
+    response = sign_in(client, username="nobody-here")
+
+    assert SIGN_IN_LIMITED in response.context["form"].non_field_errors()
+
+
+def test_lock_ignores_username_capitalization(client, customer):
+    fail_sign_ins(client, 5, username="CUSTOMER")
+
+    response = sign_in(client)
+
+    assert SIGN_IN_LIMITED in response.context["form"].non_field_errors()
+
+
+def test_successful_sign_in_clears_the_count(client, customer):
+    fail_sign_ins(client, 4)
+    assert sign_in(client).status_code == HTTPStatus.FOUND
+    client.logout()
+
+    # Four more failures would have locked the username if the count stayed.
+    fail_sign_ins(client, 4)
+    response = sign_in(client)
+
+    assert response.status_code == HTTPStatus.FOUND
+    assert is_signed_in(client)
+
+
+def test_sign_in_works_again_15_minutes_after_the_fifth_failure(client, customer):
+    start = timezone.now()
+    with at(start):
+        fail_sign_ins(client, 1)
+    with at(start + timedelta(minutes=14)):
+        fail_sign_ins(client, 4)
+
+    with at(start + timedelta(minutes=28, seconds=59)):
+        response = sign_in(client)
+        assert SIGN_IN_LIMITED in response.context["form"].non_field_errors()
+    with at(start + timedelta(minutes=29)):
+        response = sign_in(client)
+
+    assert response.status_code == HTTPStatus.FOUND
+    assert is_signed_in(client)
+
+
+def test_failures_outside_the_window_do_not_add_up(client, customer):
+    start = timezone.now()
+    with at(start):
+        fail_sign_ins(client, 4)
+    with at(start + timedelta(minutes=15)):
+        fail_sign_ins(client, 1)
+        response = sign_in(client)
+
+    assert response.status_code == HTTPStatus.FOUND
+
+
+def test_locking_one_username_does_not_affect_another(client, customer, staff_user):
+    fail_sign_ins(client, 5)
+
+    response = sign_in(client, username="employee", password="employee123")
+
+    assert response.status_code == HTTPStatus.FOUND
+    assert is_signed_in(client)
+
+
+@pytest.mark.parametrize(
+    "emails",
+    [
+        ["customer@example.com"] * 4,
+        [
+            "customer@example.com",
+            "CUSTOMER@example.com",
+            "Customer@Example.com",
+            "customer@EXAMPLE.COM",
+        ],
+    ],
+)
+def test_fourth_reset_request_sends_nothing_and_looks_the_same(
+    client, confirmed_customer, mailoutbox, emails
+):
+    responses = [request_reset(client, email) for email in emails[:3]]
+    assert len(mailoutbox) == 3
+
+    response = request_reset(client, emails[3])
+
+    assert len(mailoutbox) == 3
+    assert response.redirect_chain == responses[0].redirect_chain
+    assert without_csrf(response.content.decode()) == without_csrf(
+        responses[0].content.decode()
+    )
+    assert RESET_SENT in response.content.decode()
+
+
+def test_reset_requests_for_unknown_addresses_are_counted(client, db):
+    for _ in range(3):
+        request_reset(client, "nobody@example.com")
+
+    assert reset_requests.is_limited("nobody@example.com")
+
+
+def test_reset_requests_send_again_after_the_hour(
+    client, confirmed_customer, mailoutbox
+):
+    start = timezone.now()
+    with at(start):
+        for _ in range(3):
+            request_reset(client, "customer@example.com")
+    with at(start + timedelta(minutes=59)):
+        request_reset(client, "customer@example.com")
+        assert len(mailoutbox) == 3
+
+    with at(start + timedelta(minutes=60)):
+        request_reset(client, "customer@example.com")
+
+    assert len(mailoutbox) == 4
+
+
+def test_reset_limit_is_per_address(client, confirmed_customer, mailoutbox):
+    for _ in range(3):
+        request_reset(client, "nobody@example.com")
+
+    request_reset(client, "customer@example.com")
+
+    assert len(mailoutbox) == 1
+    assert mailoutbox[0].to == ["customer@example.com"]

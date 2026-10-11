@@ -30,6 +30,97 @@ Each entry has this shape:
 
 ---
 
+## 2026-10-11 — Account Security Phase 8: sign-in and reset-request rate limits
+
+### Prompts
+
+1. "@prd/account-security.md @plans/account-security.md Do Phase 8 only. Run
+   the tests and Ruff checks, then tell me how to verify it in the browser.
+   Don't run seed, commit, or start Phase 9. Leave db.sqlite3 out of commits
+   and don't restore it."
+2. "I checked all the browser steps and they worked. I'm okay with counting
+   username capitalization together, so record that in the PRD and plan.
+   Leave admin-login throttling out of scope. Add the Phase 8 session log at
+   the top of PROMPTS.md under today's date. Include my prompts, the changes,
+   462 passing tests, and clean Ruff checks. Note that the timed window and
+   cooldown expiry were checked by automated tests. Don't record passwords,
+   commit, or start Phase 9 yet."
+
+### Summary
+
+- **Outcome:**
+  - **Rate-limit helper:** `RateLimit` in `accounts/ratelimit.py` gained an
+    optional `cooldown`. The event that reaches the limit holds the key
+    limited for the full cooldown from that moment, so five failures late in
+    the 15-minute window still lock sign-in for 15 minutes. It also gained
+    `clear(key)`. The confirmation-email limit behaves as before.
+  - **Two new limits** in the same module: `failed_sign_ins` (5 failures in
+    15 minutes, 15-minute cooldown) and `reset_requests` (3 per hour).
+  - **Sign-in:** `SignInForm.clean()` in `accounts/forms.py` refuses a
+    locked username with "Too many failed sign-in attempts. Try again in 15
+    minutes." before checking the password, so the right password is also
+    refused. Failures are counted per submitted username, whether or not it
+    exists. A successful sign-in clears the count.
+  - **Reset requests:** `ResetRequestForm.save()` counts each request per
+    submitted email, lowercased, whether or not it matches an account. From
+    the fourth request in an hour nothing is sent, and the page is the same
+    generic "If an account exists…" page. The `ResetRequestView` docstring
+    was updated to mention throttling.
+  - **Tests:** `accounts/tests.py` gained 14 test functions (15 test cases)
+    covering:
+    - the helper's cooldown running from the event that hits the limit, and
+      `clear`
+    - five failures locking the username, with the right password refused
+      afterward; four failures not locking
+    - an unknown username throttled the same way, and capitalization
+      variants sharing one count
+    - a successful sign-in clearing the count
+    - sign-in working again 15 minutes after the fifth failure, and failures
+      more than 15 minutes apart not adding up
+    - locking one username not affecting another
+    - a fourth reset request (same email, and mixed capitalization) sending
+      nothing with an identical response; unknown addresses being counted;
+      sending again after the hour; separate limits per address
+  - **PRD and plan:** the user accepted counting username capitalization
+    together. `prd/account-security.md` and `plans/account-security.md` now
+    say the sign-in limit counts the username ignoring capitalization. The
+    PRD's Out of Scope list and the plan's Phase 8 now say the Django admin's
+    own sign-in page (`/admin/login/`) isn't throttled.
+  - **Automated results:** `uv run pytest` passed 462 tests (447 before
+    this phase), `uv run ruff check .` reported no problems, and
+    `uv run ruff format --check .` found all 58 files formatted. No
+    migration was needed.
+  - **Timed behavior:** the 15-minute sign-in cooldown expiry and the
+    one-hour reset-request window were checked by automated tests with a
+    frozen clock, not by waiting in the browser.
+  - **Browser checks (reported by the user):** the user reported that all
+    the verification steps worked: the sign-in lock with the right password
+    refused, other usernames unaffected, an unknown username locked, a
+    successful sign-in clearing the count, the silent fourth reset request,
+    and the count resetting after a dev-server restart (the documented
+    in-memory limitation). No passwords are recorded here.
+  - **Not done:** no seed run, commit, or Phase 9 work. `db.sqlite3` was not
+    touched by the code changes or restored.
+- **Deviations:**
+  - Counting username capitalization together was my choice during the
+    build. I flagged it in the report, and the user accepted it afterward.
+  - I pointed out that `/admin/login/` uses its own form and isn't
+    throttled, and offered to add it. The user chose to leave it out of
+    scope.
+  - No follow-up questions were asked.
+- **Sideways:**
+  - The plain window from Phase 5 couldn't give a full 15-minute cooldown on
+    its own, because the lock would end when the window closed. The helper
+    gained the `cooldown` option instead.
+  - `ruff format --check` flagged one test signature in `accounts/tests.py`.
+    `ruff format` rewrapped it (whitespace only), and the account tests
+    passed again afterward.
+  - In the Phase 8 report I said "17 new tests". The real count is 14 test
+    functions (15 test cases with parametrization), which matches the rise
+    from 447 to 462.
+
+---
+
 ## 2026-10-11 — Account Security Phase 7: password change and its notice
 
 ### Prompts

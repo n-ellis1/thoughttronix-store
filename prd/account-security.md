@@ -141,7 +141,7 @@ Sign-in stays username-based. Email is for recovery and notices only.
 
 | Action | Counted per | Limit | Cooldown | What the user sees |
 |---|---|---|---|---|
-| Sign-in | Submitted username, counted whether or not the username exists | 5 failures in 15 minutes | 15 minutes | "Too many failed sign-in attempts. Try again in 15 minutes." Even a correct password is refused during the cooldown. A successful sign-in clears the count. |
+| Sign-in | Submitted username, ignoring capitalization (`Customer` and `customer` share one count), counted whether or not the username exists | 5 failures in 15 minutes | 15 minutes | "Too many failed sign-in attempts. Try again in 15 minutes." Even a correct password is refused during the cooldown. A successful sign-in clears the count. |
 | Password reset request | Submitted email, lowercased first, counted whether or not it matches an account | 3 per hour | Remainder of the hour | The normal generic message. No email is sent. |
 | Confirmation email | Account, including the newly created account at signup; covers initial signup confirmation, new add/change requests, replacement addresses, and resends | 3 per hour | Remainder of the hour | "You've requested several confirmation emails. Please wait before requesting another." The pending address and Cancel stay available, and a refused new request leaves the existing pending request unchanged. |
 
@@ -192,6 +192,7 @@ Sign-in stays username-based. Email is for recovery and notices only.
 - Closing the signup form's "already registered" disclosure. This is accepted as a known trade-off of email uniqueness.
 - HTML email templates and transactional email services. Delivery is console or SMTP only.
 - Persistent or shared rate-limit storage, such as a database table or Redis.
+- Throttling the Django admin's own sign-in page (`/admin/login/`). The sign-in limit covers the store's sign-in form only.
 - HTMX inline forms on the Security Center.
 - Notices for admin-made email edits.
 - Self-service recovery for accounts with unusable passwords.

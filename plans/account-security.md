@@ -34,7 +34,7 @@ Durable decisions that apply across all phases:
 
   | Action | Counted per | Limit | Cooldown | What the user sees |
   |---|---|---|---|---|
-  | Sign-in | Submitted username, whether or not it exists | 5 failures in 15 minutes | 15 minutes | "Too many failed sign-in attempts. Try again in 15 minutes." A correct password is also refused during the cooldown. A successful sign-in clears the count. |
+  | Sign-in | Submitted username, ignoring capitalization, whether or not it exists | 5 failures in 15 minutes | 15 minutes | "Too many failed sign-in attempts. Try again in 15 minutes." A correct password is also refused during the cooldown. A successful sign-in clears the count. |
   | Password-reset request | Submitted email, lowercased, whether or not it matches an account | 3 per hour | Remainder of the hour | The normal generic message; no email is sent. |
   | Confirmation email | Account (including a just-created account at signup); covers signup, new add/change requests, replacement addresses, and resends | 3 per hour | Remainder of the hour | "You've requested several confirmation emails. Please wait before requesting another." Pending address and Cancel stay available; a refused new request leaves the existing pending request unchanged. |
 
@@ -288,7 +288,7 @@ Accounts with an unusable password don't see the button. If they open the page d
 
 Two more uses of the Phase 5 helper:
 
-- **Sign-in:** per submitted username, counted whether or not the username exists. After **5 failures in 15 minutes**, sign-in is refused for **15 minutes** with "Too many failed sign-in attempts. Try again in 15 minutes." The right password is also refused during the cooldown. A successful sign-in clears the count.
+- **Sign-in:** per submitted username, ignoring capitalization (`Customer` and `customer` share one count), counted whether or not the username exists. After **5 failures in 15 minutes**, sign-in is refused for **15 minutes** with "Too many failed sign-in attempts. Try again in 15 minutes." The right password is also refused during the cooldown. A successful sign-in clears the count. The Django admin's own sign-in page (`/admin/login/`) is out of scope.
 - **Password-reset requests:** per submitted email, lowercased first, counted whether or not it matches an account. After **3 requests in an hour**, more requests show the normal generic message and send **no email** until the window ends.
 
 ### Acceptance criteria

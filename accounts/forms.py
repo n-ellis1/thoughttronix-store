@@ -9,13 +9,14 @@ from django.contrib.auth.forms import (
 )
 
 from .models import User
-from .ratelimit import confirmation_emails
+from .ratelimit import confirmation_emails, failed_sign_ins, reset_requests
 
 EMAIL_TAKEN_MESSAGE = "That email address is already registered to another account."
 CONFIRMATION_LIMIT_MESSAGE = (
     "You've requested several confirmation emails. "
     "Please wait before requesting another."
 )
+SIGN_IN_LIMIT_MESSAGE = "Too many failed sign-in attempts. Try again in 15 minutes."
 
 
 class SignupForm(UserCreationForm):
@@ -53,12 +54,34 @@ class SignupForm(UserCreationForm):
 
 
 class SignInForm(AuthenticationForm):
-    """The stock authentication form, dressed in DaisyUI."""
+    """The stock authentication form, dressed in DaisyUI and throttled.
+
+    Failures are counted per submitted username, ignoring case, whether or
+    not the account exists. Five in 15 minutes lock that username for 15
+    minutes, during which even the right password is refused. A successful
+    sign-in clears the count.
+    """
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         for field in self.fields.values():
             field.widget.attrs["class"] = "input w-full"
+
+    def clean(self):
+        username = self.cleaned_data.get("username")
+        if username is None:
+            return super().clean()
+        key = username.lower()
+        if failed_sign_ins.is_limited(key):
+            raise forms.ValidationError(SIGN_IN_LIMIT_MESSAGE, code="throttled")
+        try:
+            cleaned_data = super().clean()
+        except forms.ValidationError:
+            failed_sign_ins.hit(key)
+            raise
+        if self.user_cache is not None:
+            failed_sign_ins.clear(key)
+        return cleaned_data
 
 
 class ResetRequestForm(PasswordResetForm):
@@ -66,13 +89,22 @@ class ResetRequestForm(PasswordResetForm):
 
     Its stock lookup already matches the *confirmed* email only, ignoring
     case, and skips inactive accounts and unusable passwords, so a pending
-    address never receives a reset link.
+    address never receives a reset link. Requests are counted per submitted
+    email, lowercased, whether or not it matches an account; past three in
+    an hour, nothing is sent and the response stays the same.
     """
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["email"].label = "Email address"
         self.fields["email"].widget.attrs["class"] = "input w-full"
+
+    def save(self, *args, **kwargs):
+        key = self.cleaned_data["email"].lower()
+        if reset_requests.is_limited(key):
+            return
+        reset_requests.hit(key)
+        super().save(*args, **kwargs)
 
 
 class ResetPasswordForm(SetPasswordForm):
