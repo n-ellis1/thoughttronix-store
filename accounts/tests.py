@@ -691,6 +691,35 @@ def test_admin_duplicate_email_is_a_form_error(
     assert confirmed_customer.email == "customer@example.com"
 
 
+def test_admin_sets_a_usable_password_for_an_unusable_password_account(
+    client, superuser, confirmed_customer
+):
+    confirmed_customer.set_unusable_password()
+    confirmed_customer.save()
+    client.force_login(superuser)
+    # Django's UserAdmin names this URL after auth.User, even for custom models.
+    url = reverse("admin:auth_user_password_change", args=[confirmed_customer.pk])
+
+    response = client.post(
+        url,
+        {
+            "usable_password": "true",
+            "password1": "fresh-thoughts-2026",
+            "password2": "fresh-thoughts-2026",
+        },
+    )
+
+    assert response.status_code == HTTPStatus.FOUND
+    confirmed_customer.refresh_from_db()
+    assert confirmed_customer.has_usable_password()
+    assert Client().login(username="customer", password="fresh-thoughts-2026")
+    # The Security Center now offers password management instead of support.
+    client.force_login(confirmed_customer)
+    page = client.get(reverse("accounts:security")).content.decode()
+    assert CONTACT_SUPPORT not in page
+    assert reverse("accounts:password_change") in page
+
+
 # --- Managing a pending request ----------------------------------------------
 
 NO_PENDING = "You have no pending email change."

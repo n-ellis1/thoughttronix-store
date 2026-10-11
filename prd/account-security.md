@@ -37,7 +37,7 @@ Sign-in stays username-based. Email is for recovery and notices only.
 11. As a visitor, I want to set a new password from the reset link without entering my old password, so that I can recover an account whose password I've forgotten.
 12. As a visitor who has just reset my password, I want to be sent to the sign-in page with a message asking me to sign in with my new password, so that I know the reset worked.
 13. As a visitor with an expired or already-used reset link, I want a clear message explaining that the link no longer works, with a way to request another reset, so that I'm not stuck.
-14. As a visitor who has entered the wrong password five times, I want a clear message saying to try again in 15 minutes, so that I understand why sign-in is refusing me.
+14. As a visitor who has entered the wrong password five times, I want every sign-in attempt after the fifth failure to show a clear message saying to try again in 15 minutes, so that I understand why sign-in is refusing me. (The fifth failure itself still shows the usual incorrect-password error.)
 
 **Customer (signed in)**
 

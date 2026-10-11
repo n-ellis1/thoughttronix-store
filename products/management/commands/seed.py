@@ -10,6 +10,12 @@ Demo logins (documented in the README):
     employee / employee123  staff, "Junior Thought Curator"
     customer / customer123  a plain customer, with order history, a live cart,
                             and two saved addresses
+    newcustomer / newcustomer123
+                            a plain customer with no email, to show the
+                            Security Center's missing-email reminder
+
+Every other seeded email is a confirmed ``example.com`` address with no
+pending request, so the password reset and change flows work immediately.
 """
 
 import random
@@ -448,6 +454,8 @@ DEMO_USERS = [
         False,
         None,
     ),
+    # No email at all: signs in to the Security Center's "add an email" reminder.
+    ("newcustomer", "newcustomer123", "", "Noor", "Haddad", False, False, None),
 ]
 
 # Background customers flesh out the demo world; they get order history in

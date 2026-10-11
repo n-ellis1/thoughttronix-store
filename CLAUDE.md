@@ -19,6 +19,11 @@ A server-rendered Django 6 storefront and back office. The PRD (`prd/core-platfo
 - `accounts/` — custom user model (`accounts.User`, `AbstractUser` + nullable
   `job_title`). Roles are Django's own vocabulary: customers are plain users,
   employees are `is_staff`, the admin is `is_superuser`. No role field, no Groups.
+  Also the Account Security Center (`prd/account-security.md`): `email` is the
+  confirmed address, with pending-email methods on `User`; email
+  add/change/confirm, password change, and password reset built on Django's
+  auth views; plain-text emails in `emails.py`; cache-backed rate limits in
+  `ratelimit.py`.
 - `products/` — catalog (`Category`, `Product`, `Tag`), its back-office CRUD,
   and the `seed` command
 - `orders/` — cart, checkout, orders, and back-office order management

@@ -2,15 +2,11 @@ from decimal import Decimal
 from http import HTTPStatus
 
 import pytest
-from django.contrib.auth import get_user_model
-from django.core.management import call_command
 from django.db import IntegrityError
 from django.urls import reverse
 from django.utils.html import escape
 
-from orders.models import Address, CartItem, Order, OrderItem
-
-from .models import Category, Product, Tag
+from .models import Category, Product
 
 # --- Model behavior -------------------------------------------------------
 
@@ -225,65 +221,3 @@ def test_catalog_paginates_at_twelve(client, category):
     assert len(first.context["products"]) == 12
     assert len(second.context["products"]) == 1
     assert "Page 2 of 2" in second.content.decode()
-
-
-# --- The seed command -------------------------------------------------------
-
-
-def test_seed_builds_the_demo_world(db):
-    call_command("seed")
-
-    assert Category.objects.count() == 6
-    assert Tag.objects.count() == 12
-    assert Product.objects.count() == 34
-
-    User = get_user_model()
-    admin = User.objects.get(username="admin")
-    employee = User.objects.get(username="employee")
-    customer = User.objects.get(username="customer")
-    assert admin.is_superuser
-    assert employee.is_staff and not employee.is_superuser
-    assert employee.job_title == "Junior Thought Curator"
-    assert not customer.is_staff
-    assert customer.cart.item_count() == 4
-    assert customer.orders.count() == 4
-    assert customer.addresses.count() == 2
-    assert customer.addresses.filter(is_default=True).count() == 1
-    assert Address.objects.count() == 2  # background customers have none
-
-    mark_one = Product.objects.get(slug="soulsear-mark-i")
-    assert not mark_one.is_available
-    assert mark_one.category.name == "Defense"
-
-    # 40–60 orders across the trailing six months, per the PRD.
-    assert Order.objects.count() == 52
-    statuses = set(Order.objects.values_list("status", flat=True))
-    assert statuses == set(Order.Status.values)
-
-
-def test_seed_is_idempotent(db):
-    call_command("seed")
-    first = (
-        Category.objects.count(),
-        Tag.objects.count(),
-        Product.objects.count(),
-        get_user_model().objects.count(),
-        CartItem.objects.count(),
-        Order.objects.count(),
-        OrderItem.objects.count(),
-        Address.objects.count(),
-    )
-
-    call_command("seed")
-    second = (
-        Category.objects.count(),
-        Tag.objects.count(),
-        Product.objects.count(),
-        get_user_model().objects.count(),
-        CartItem.objects.count(),
-        Order.objects.count(),
-        OrderItem.objects.count(),
-        Address.objects.count(),
-    )
-
-    assert first == second

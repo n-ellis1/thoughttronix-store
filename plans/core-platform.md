@@ -49,7 +49,7 @@
 **Goal:** Visitors become customers: signup, login, logout, and an auth-aware layout.
 
 **Tasks:**
-1. Signup (username and password with confirmation — Django's stock `UserCreationForm` fields, no email), login, logout — Django auth views plus a signup view in `accounts`, templates styled to match. Signup redirects to the login page.
+1. Signup (username and password with confirmation — Django's stock `UserCreationForm` fields; *later update:* signup now also requires an email address, confirmed by link, per `prd/account-security.md`), login, logout — Django auth views plus a signup view in `accounts`, templates styled to match. Signup redirects to the login page.
 2. Navbar reflects auth state (greeting + logout vs. login/signup links).
 3. Messages framework wired into `base.html`; "You have signed out" as the first message per the PRD's messages convention.
 4. `conftest.py` grows: a customer fixture and a staff fixture.

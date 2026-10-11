@@ -30,6 +30,152 @@ Each entry has this shape:
 
 ---
 
+## 2026-10-11 — Account Security Phase 9: seed, admin passwords, docs, and the full PRD review
+
+### Prompts
+
+1. "@prd/account-security.md @plans/account-security.md Do Phase 9 only.
+   Verify seed using the isolated database and media folder described in the
+   plan—never my current database or media folder. Finish the docs and
+   admin-password checks, then run the formatter, Ruff, and full test suite.
+   Tell me how to verify this phase in the browser. Don't commit yet. We need
+   to review the complete Account Security Center against every PRD user
+   story before the final implementation commit. Leave db.sqlite3 out of
+   commits and don't restore it."
+2. "The Phase 9 browser checks all worked. Before we commit, review the
+   completed feature against every user story in prd/account-security.md.
+   Give me a checklist showing what implements each story and what test or
+   browser check verifies it. Flag anything missing or different from the
+   PRD. Also identify the exact files and Django components used for
+   authentication, password change, and password reset. Don't change
+   anything or commit yet."
+3. "Keep the current sign-in behavior, but clarify story 14 so it says the
+   cooldown message appears on attempts after the fifth failure. Update
+   CLAUDE.md's accounts description to include the Security Center. Keep the
+   console email and isolated seed verification as documented. Don't add
+   more features or commit yet."
+4. "The final browser journey worked. Run uv run ruff format, uv run ruff
+   check ., and uv run pytest for the final verification. Then add the Phase
+   9 session log to PROMPTS.md, including the isolated seed check, browser
+   checks, full PRD review, wording updates, and final verification results.
+   Don't record passwords or commit yet."
+
+### Summary
+
+- **Outcome:**
+  - **Seed:** `products/management/commands/seed.py` adds the documented
+    demo customer `newcustomer`, with a usable password and a blank email.
+    It is part of `DEMO_USERS`, so the seed's list of managed usernames
+    includes it and reruns stay idempotent. The module docstring lists the
+    new login and says every other seeded email is a confirmed
+    `example.com` address with no pending request.
+  - **Seed tests removed:** the two seed tests in `products/tests.py`
+    (`test_seed_builds_the_demo_world`, `test_seed_is_idempotent`) called
+    `call_command("seed")`. That broke the plan's "the normal test suite
+    contains no seed calls" and `docs/TESTING.md`. I removed them, and
+    Ruff removed the imports they left unused. The normal suite now has no
+    seed calls.
+  - **Admin passwords:** a new test in `accounts/tests.py`,
+    `test_admin_sets_a_usable_password_for_an_unusable_password_account`,
+    sets a password through the Django admin's password form on an
+    unusable-password account. It checks that the account can sign in and
+    that the Security Center then offers "Change password" instead of the
+    contact-support message. The Phase 2 admin email tests still pass.
+  - **Isolated seed check:** run entirely outside the repository.
+    - I recorded a SHA-256 checksum, modification time, and size for
+      `db.sqlite3`, and a listing of `media/` (13 files with sizes and
+      modification times).
+    - A temporary settings module in the session scratchpad imported
+      `config.settings` and pointed `DATABASES` and `MEDIA_ROOT` at a new
+      temporary folder. Both paths were confirmed before anything wrote.
+    - With `--settings` pointing at that module, `migrate` ran once and
+      `seed` twice. Both seed runs reported 6 categories, 12 tags, 34
+      products, 13 users, 52 orders, and 4 discount codes.
+    - Checks against the throwaway database:
+      - `newcustomer` signs in and has a blank email and no pending request
+      - the other 12 users have confirmed `example.com` emails and nothing
+        pending
+      - `admin`, `employee`, and `customer` sign in
+      - no two confirmed emails match ignoring case
+    - Afterwards, `db.sqlite3` and `media/` matched the recorded baseline
+      exactly, and I deleted the temporary folder and scripts.
+  - **Docs:**
+    - The README gained `newcustomer` in the demo-login table, a note on
+      confirmed seeded emails and admin-set passwords, and a new "Account
+      security and email" section. It covers testing emails by copying
+      links from the terminal, SMTP setup through `.env`, and a rate-limit
+      table with the in-memory cache limitation (counters reset on restart,
+      aren't shared between processes, and production should use a shared
+      cache).
+    - `plans/core-platform.md` Phase 3 task 1 gained a short "later update"
+      note: signup now requires an email, per `prd/account-security.md`.
+  - **Full PRD review:** a checklist mapped all 53 user stories to the code
+    and to a test or browser check. No story was missing. Three differences
+    were flagged:
+    - story 14's message appears from the sixth attempt
+    - stories 50–51 (console email, SMTP settings) have no automated test
+    - stories 52–53 (seeded logins and emails) are verified only by the
+      isolated seed check
+
+    Smaller notes:
+    - unusable-password users still see the Add/Change email button, which
+      leads to the contact-support message
+    - email confirmation happens on GET, so mail-scanner link prefetching
+      could confirm an address
+    - the confirmation link lands on its own result page
+    - one overlong line in the `SignupView` docstring
+
+    The review also listed the files and Django components used for
+    authentication, password change, and password reset.
+  - **Wording updates after the review:**
+    - Story 14 in `prd/account-security.md` now says the cooldown message
+      appears on every attempt after the fifth failure, and that the fifth
+      failure still shows the usual incorrect-password error.
+    - `CLAUDE.md`'s `accounts/` entry now describes the Account Security
+      Center.
+    - The sign-in behavior was not changed.
+  - **Browser checks (reported by the user):** the user reported that the
+    Phase 9 browser checks worked and that the final browser journey worked.
+    The Phase 9 checks were: reviewing the README and docs, the missing-email
+    reminder on an account with no email, the admin's password form, and the
+    admin's duplicate-email form error. These ran on the current development
+    database, not seeded, because `newcustomer` exists only after a seed.
+    No passwords are recorded here.
+  - **Final verification:** `uv run ruff format` left all 58 files
+    unchanged, `uv run ruff check .` reported no problems, and
+    `uv run pytest` passed 461 tests. That is 462 after Phase 8, minus the
+    two removed seed tests, plus the new admin test. No migration was needed.
+  - **Not done:** nothing committed. `db.sqlite3` and `media/` were not
+    modified, staged, or restored.
+- **Deviations:**
+  - Removing the existing seed tests was my call, made to meet the plan's
+    no-seed-calls rule. I flagged it, including the lost automated coverage
+    of the rest of the demo world. The user kept the isolated seed check as
+    the documented verification.
+  - For story 14, the user kept the current behavior (the lockout message
+    from the sixth attempt) and had the story's wording clarified instead of
+    changing the code.
+  - The user kept console email and the isolated seed check as documented,
+    and asked for no further features. The smaller review notes were left
+    as they are.
+  - No follow-up questions were asked.
+- **Sideways:**
+  - The baseline step showed that `db.sqlite3` and `media/` are tracked by
+    git even though `.gitignore` lists them. They were left alone.
+  - My first attempt to cut the seed tests failed because the text I gave
+    to match didn't fit the file. I truncated the file at the end of the
+    previous test instead, and Ruff removed the unused imports.
+  - The new admin test first used the URL name
+    `admin:accounts_user_password_change`, which doesn't exist. Django's
+    `UserAdmin` names that route `auth_user_password_change` even for a
+    custom user model. After the fix it passed.
+  - The first run of the seed-verification script was piped into
+    `manage.py shell`. Its interactive console broke up the multi-line loops
+    and reported syntax errors, so those two checks didn't run. I re-ran the
+    whole script with `shell -c "exec(...)"`, and every check passed.
+
+---
+
 ## 2026-10-11 — Account Security Phase 8: sign-in and reset-request rate limits
 
 ### Prompts
