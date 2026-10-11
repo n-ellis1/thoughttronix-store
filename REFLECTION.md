@@ -1,3 +1,17 @@
+## Account Security Center
+
+## Quesiton 1
+Ok the account was supposed to show the pending email and its status along with the resend and cancel buttons. I tested these were working by clicking resend and opening the old and new confirmation links and then I canceled the other pending change and opened its link. The old link was turned down and the new link was accepted. The cancel ended up removing the pending request without changing the the confirmed address.
+
+## Question 2
+In accounts/views.py, class SignInView(LoginView) uses Django's built in log in view to take care of signing in. The same file has class SecurityView(LoginRequiredMixin, TemplateView) and this makes users sign in before opening the security center. I checked this was working by visiting the page while I was signed out.
+
+## Question 3
+In accounts/views.py, ChangePasswordView(SuccessMessageMixin, PasswordChangeView) uses Django’s built-in password-change view, and accounts/forms.py contains ChangePasswordForm(PasswordChangeForm) to check the current password and make sure the new one is good. This matches the lesson because Django handles the password checks and securely saves the new password. ThoughtTronix adds styling, a success message, and an email notice, which I checked in the browser.
+
+## Question 4
+Ok so I'm going to go with phase 6 because the whole password reset flow worked from requesting the email to setting a new password and then signing in with it. I could even test that path in the browser and check if the password was too weak and that reused links were rejected. It also meant the reset page already worked when I got to phase 7 and had to add password change notices that linked to it.
+
 ## Product Images
 
 ### Question 1
