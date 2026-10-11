@@ -1,5 +1,6 @@
 from http import HTTPStatus
 
+import pytest
 from django.contrib.auth import get_user_model
 from django.urls import reverse
 
@@ -108,3 +109,98 @@ def test_navbar_greets_signed_in_customer(client, customer):
     assert "Hi, customer" in page
     assert "Sign out" in page
     assert reverse("accounts:signup") not in page
+
+
+def test_navbar_offers_account_link_to_signed_in_users(client, customer):
+    client.force_login(customer)
+
+    page = client.get(reverse("products:catalog")).content.decode()
+
+    assert reverse("accounts:security") in page
+    # The Account link sits beside Addresses.
+    assert page.index(reverse("orders:addresses")) < page.index(
+        reverse("accounts:security")
+    )
+
+
+def test_navbar_hides_account_link_from_visitors(client, db):
+    page = client.get(reverse("products:catalog")).content.decode()
+
+    assert reverse("accounts:security") not in page
+
+
+# --- Security Center overview ------------------------------------------------
+
+EMAIL_REMINDER = "Add an email so you can recover your account."
+CONTACT_SUPPORT = "Password management isn't available for your account."
+
+
+@pytest.fixture
+def superuser(db):
+    return get_user_model().objects.create_superuser(
+        username="admin", password="admin123", email="admin@example.com"
+    )
+
+
+@pytest.mark.parametrize("role", ["customer", "staff_user", "superuser"])
+def test_security_page_open_to_every_role(client, request, role):
+    client.force_login(request.getfixturevalue(role))
+
+    response = client.get(reverse("accounts:security"))
+
+    assert response.status_code == HTTPStatus.OK
+
+
+def test_security_page_redirects_visitors_to_sign_in(client, db):
+    url = reverse("accounts:security")
+
+    response = client.get(url)
+
+    assert response.status_code == HTTPStatus.FOUND
+    assert response.url == f"{reverse('accounts:login')}?next={url}"
+
+
+def test_security_page_shows_confirmed_email(client, customer):
+    customer.email = "customer@example.com"
+    customer.save()
+    client.force_login(customer)
+
+    page = client.get(reverse("accounts:security")).content.decode()
+
+    assert "customer@example.com" in page
+    assert EMAIL_REMINDER not in page
+
+
+def test_security_page_reminds_users_without_email(client, customer):
+    client.force_login(customer)
+
+    page = client.get(reverse("accounts:security")).content.decode()
+
+    assert EMAIL_REMINDER in page
+
+
+def test_security_page_shows_contact_support_for_unusable_password(client, customer):
+    customer.set_unusable_password()
+    customer.save()
+    client.force_login(customer)
+
+    page = client.get(reverse("accounts:security")).content.decode()
+
+    assert CONTACT_SUPPORT in page
+
+
+def test_security_page_hides_contact_support_for_usable_password(client, customer):
+    client.force_login(customer)
+
+    page = client.get(reverse("accounts:security")).content.decode()
+
+    assert CONTACT_SUPPORT not in page
+
+
+def test_security_page_has_no_action_controls_yet(client, customer):
+    client.force_login(customer)
+
+    page = client.get(reverse("accounts:security")).content.decode()
+
+    for label in ("Add email", "Change email", "Change password"):
+        assert label not in page

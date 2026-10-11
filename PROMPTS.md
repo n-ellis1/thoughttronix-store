@@ -30,6 +30,69 @@ Each entry has this shape:
 
 ---
 
+## 2026-10-11 — Account Security Phase 1: read-only Security Center overview
+
+### Prompts
+
+1. "@prd/account-security.md @plans/account-security.md Do Phase 1 only. Run
+   the tests and Ruff checks, then tell me how to verify it in the browser.
+   Don't start Phase 2, run seed, or commit yet."
+2. "The browser checks all worked: customer, employee, and admin can open
+   Account, there are no action buttons, and signing out hides the link.
+   Opening the page while signed out sends me to login, then back to the
+   Security Center after signing in. Add this session's log at the top of
+   PROMPTS.md under today's date. Record my prompts in order, the changes,
+   automated results, and browser checks. Don't commit or start Phase 2 yet."
+
+### Summary
+
+- **Outcome:**
+  - **View and URL:** `accounts/views.py` gains `SecurityView`
+    (`LoginRequiredMixin` + `TemplateView`), routed at
+    `/accounts/security/` as `accounts:security`. It reads everything it
+    needs from `request.user`. No migration was needed for this phase.
+  - **Template:** `templates/accounts/security.html` has two cards.
+    - **Email** shows the confirmed address, or the "Add an email so you
+      can recover your account." warning when the email is blank.
+    - **Password** shows a short description, or the "contact support"
+      message when the password is unusable.
+    - There are no action buttons, per the plan.
+  - **Navbar:** `templates/base.html` has an "Account" link right after
+    "Addresses", for signed-in users only.
+  - **Tests:** `accounts/tests.py` gains 11 tests (13 test runs, because the
+    role test runs once each for customer, staff and superuser). They cover:
+    - access for each role
+    - the anonymous redirect to sign-in with `next` set
+    - the confirmed email vs. the reminder
+    - the unusable-password message, both shown and hidden
+    - no Add email, Change email or Change password controls
+    - the navbar link showing for signed-in users, after "Addresses", and
+      hidden from visitors
+  - **Automated results:** `uv run pytest` passed (346 tests).
+    `uv run ruff check .` reported no problems, and
+    `uv run ruff format --check .` found all 56 files already formatted.
+  - **Browser checks (reported by the user):**
+    - `customer`, `employee` and `admin` can each open Account.
+    - The page has no action buttons.
+    - Signing out hides the link.
+    - Opening `/accounts/security/` while signed out redirects to sign-in,
+      then back to the Security Center after signing in.
+  - **Not done:** no commit, seed run or Phase 2 work.
+- **Deviations:** None. No follow-up questions were asked.
+  - The superuser fixture is local to `accounts/tests.py` rather than in
+    `conftest.py`, since only these tests use it so far.
+  - The main demo accounts checked in the browser (`customer`, `employee`,
+    `admin`) have emails and usable passwords, so none of them shows the
+    missing-email reminder or the contact-support message. The background
+    seeded customers do have unusable passwords, but they can't sign in, so
+    the contact-support state was verified through automated tests, not the
+    browser. The missing-email reminder was also verified only through
+    automated tests. The demo user that shows it (`newcustomer`) arrives in
+    Phase 9.
+- **Sideways:** Nothing went wrong this session.
+
+---
+
 ## 2026-10-11 — PRD rename, lesson navbar job title, and starting-point commit
 
 ### Prompts

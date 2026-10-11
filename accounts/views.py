@@ -1,8 +1,9 @@
 from django.contrib import messages
+from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.views import LoginView, LogoutView
 from django.contrib.messages.views import SuccessMessageMixin
 from django.urls import reverse_lazy
-from django.views.generic import CreateView
+from django.views.generic import CreateView, TemplateView
 
 from .forms import SignInForm, SignupForm
 
@@ -32,3 +33,13 @@ class SignOutView(LogoutView):
         response = super().post(request, *args, **kwargs)
         messages.info(request, "You have signed out.")
         return response
+
+
+class SecurityView(LoginRequiredMixin, TemplateView):
+    """The Account Security Center overview, open to every signed-in user.
+
+    Read-only for now: the template reads the confirmed email and password
+    state straight off ``request.user``.
+    """
+
+    template_name = "accounts/security.html"
