@@ -84,7 +84,7 @@ There are **no action buttons yet**. Add/Change email arrives in Phase 2, and Ch
 
 - **Email delivery:** email settings come from `.env` via environs with the console backend as default. `.env.example` gains commented placeholders for SMTP.
 - **Data:** the migration adds the pending-email fields and the case-insensitive conditional uniqueness constraint.
-- **Request:** the overview gains an **"Add email"** button (no confirmed email) or a **"Change email"** button (otherwise), leading to `accounts:email_change`. The form takes the new address and the current password. It rejects a wrong password and an address another account has already confirmed (ignoring case). A valid request:
+- **Request:** the overview gains an **"Add email"** button (no confirmed email) or a **"Change email"** button (otherwise), leading to `accounts:email_change`. The form takes the new address and the current password. It rejects a wrong password, an address another account has already confirmed (ignoring case), and the account's own current confirmed address (ignoring case). A valid request:
   - sets the pending address,
   - replaces any earlier request, so earlier links stop working,
   - sends a confirmation link to the new address,
@@ -104,7 +104,7 @@ There are **no action buttons yet**. Add/Change email arrives in Phase 2, and Ch
 
 - [ ] Migration applies cleanly to an empty test database. The constraint rejects case-insensitive duplicates and allows any number of blank emails.
 - [ ] The button label is "Add email" or "Change email" depending on whether an email is confirmed.
-- [ ] Wrong current password, or an address another account has confirmed (any capitalization), produces a form error. No pending change and no email.
+- [ ] Wrong current password, an address another account has confirmed (any capitalization), or the account's own confirmed address (any capitalization) produces a form error. No pending change and no email.
 - [ ] Another account's *pending* address does not block a request.
 - [ ] A valid request sends exactly one email, to the new address, with a working link. The confirmed address is unchanged until the link is clicked.
 - [ ] A second request makes the first link stop working. Only the newest link confirms.

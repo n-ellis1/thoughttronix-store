@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+
+{% block title %}Confirm email — The ThoughtTronix Store{% endblock %}
+
+{% block content %}
+  <div class="mx-auto max-w-md">
+    <div class="card bg-base-100 shadow-md">
+      <div class="card-body">
+        <h1 class="card-title text-2xl">Confirm email</h1>
+        {% if outcome == "confirmed" %}
+          <div class="alert alert-success" role="alert">
+            <span>Your email address is confirmed: <span class="font-semibold break-all">{{ email }}</span></span>
+          </div>
+          <p class="text-sm opacity-70">Recovery emails and security notices will go to this address.</p>
+        {% elif outcome == "taken" %}
+          <div class="alert alert-error" role="alert">
+            <span>That email address is already confirmed on another account. Please add a different address in your Security Center.</span>
+          </div>
+        {% else %}
+          <div class="alert alert-warning" role="alert">
+            <span>This link is no longer valid.</span>
+          </div>
+          <p class="text-sm opacity-70">
+            It may have expired, been replaced by a newer link, or already been used.
+            Visit your Security Center to request a new one.
+          </p>
+        {% endif %}
+        <div class="card-actions mt-4">
+          <a href="{% url 'accounts:security' %}" class="btn btn-primary">Go to Account Security</a>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock %}

@@ -1,0 +1,13 @@
+{% autoescape off %}Hi {{ user.username }},
+
+Please confirm this email address for your ThoughtTronix account by opening this link:
+
+{{ confirm_url }}
+
+The link works for 24 hours, and only the newest link we send you works. Until you confirm, your account's current email (if any) stays in place.
+
+If you didn't ask for this, you can ignore this email. Nothing changes unless the link is opened.
+
+— ThoughtTronix
+Your Thoughts, Our Business.
+{% endautoescape %}

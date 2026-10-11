@@ -2,10 +2,17 @@ from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.views import LoginView, LogoutView
 from django.contrib.messages.views import SuccessMessageMixin
+from django.shortcuts import redirect
 from django.urls import reverse_lazy
-from django.views.generic import CreateView, TemplateView
+from django.views.generic import CreateView, FormView, TemplateView
 
-from .forms import SignInForm, SignupForm
+from .emails import send_email_changed_notice, send_email_confirmation
+from .forms import EmailChangeForm, SignInForm, SignupForm
+from .models import EmailAlreadyConfirmed, User
+
+CONTACT_SUPPORT_MESSAGE = (
+    "Password management isn't available for your account. Please contact support."
+)
 
 
 class SignupView(SuccessMessageMixin, CreateView):
@@ -38,8 +45,65 @@ class SignOutView(LogoutView):
 class SecurityView(LoginRequiredMixin, TemplateView):
     """The Account Security Center overview, open to every signed-in user.
 
-    Read-only for now: the template reads the confirmed email and password
-    state straight off ``request.user``.
+    The template reads the confirmed email and password state straight off
+    ``request.user``.
     """
 
     template_name = "accounts/security.html"
+
+
+class EmailChangeView(LoginRequiredMixin, FormView):
+    """Request an add or change of the confirmed email.
+
+    The form needs the current password, so accounts without a usable one
+    are sent back to the overview with the contact-support message.
+    """
+
+    form_class = EmailChangeForm
+    template_name = "accounts/email_change.html"
+
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated and not request.user.has_usable_password():
+            messages.info(request, CONTACT_SUPPORT_MESSAGE)
+            return redirect("accounts:security")
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_form_kwargs(self):
+        return {"user": self.request.user, **super().get_form_kwargs()}
+
+    def form_valid(self, form):
+        user = self.request.user
+        token = user.request_email_change(form.cleaned_data["email"])
+        send_email_confirmation(self.request, user, token)
+        messages.success(
+            self.request,
+            f"We sent a confirmation link to {user.pending_email}. "
+            "Click it within 24 hours to finish. Your current email stays "
+            "in place until then.",
+        )
+        return redirect("accounts:security")
+
+
+class EmailConfirmView(TemplateView):
+    """Confirm a pending email from its link. Public on purpose.
+
+    The link works in any browser, signed in or not, and never signs
+    anyone in or changes who is signed in: it only acts on the account
+    the link was issued for.
+    """
+
+    template_name = "accounts/email_confirm.html"
+
+    def get(self, request, *args, **kwargs):
+        user = User.objects.for_email_token(kwargs["token"])
+        if user is None:
+            return self.render_to_response(self.get_context_data(outcome="invalid"))
+        try:
+            old_email = user.confirm_pending_email()
+        except EmailAlreadyConfirmed:
+            return self.render_to_response(self.get_context_data(outcome="taken"))
+        if old_email:
+            send_email_changed_notice(request, user, old_email)
+        return self.render_to_response(
+            self.get_context_data(outcome="confirmed", email=user.email)
+        )

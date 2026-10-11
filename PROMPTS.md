@@ -30,6 +30,142 @@ Each entry has this shape:
 
 ---
 
+## 2026-10-11 — Account Security Phase 2: add/change email, confirmation, admin protection
+
+### Prompts
+
+1. "@prd/account-security.md @plans/account-security.md Do Phase 2 only. Run
+   the tests and Ruff checks, then tell me how to verify it in the browser.
+   Don't run seed, commit, or start Phase 3. Before applying the migration,
+   check for duplicate emails and back up my current database. Keep my
+   existing store data and uploaded images."
+2. "All the browser checks worked: adding an email in a private window,
+   changing email, replacing and reusing links, wrong-password and
+   duplicate-email errors, and the admin override clearing a pending request
+   without a notice. I'm okay with rejecting a request for your own confirmed
+   email. Add that decision to the PRD and plan. Then add the Phase 2 session
+   log to PROMPTS.md with my prompts, the 373 passing tests, clean Ruff
+   checks, backup and migration details, and my browser results. Note the
+   immediate confirmation on opening a link and the email-scanner
+   limitation. Don't commit or start Phase 3 yet."
+3. "The own-email browser check worked too: CUSTOMER@example.com showed the
+   error and sent no email. Add that result to the Phase 2 log. Then commit
+   Phase 2, including the updated PRD, plan, log, and migrated db.sqlite3,
+   with "Complete Account Security Center Phase 2". Push and confirm git
+   status is clean. Keep the backup outside the repo, and don't start
+   Phase 3 yet."
+
+### Summary
+
+- **Outcome:**
+  - **Before migrating:**
+    - **Duplicate check:** a read-only query of `db.sqlite3` found 12 users,
+      no blank emails, and no case-insensitive duplicates.
+    - **Backup:** the database was copied with SQLite's backup API, and
+      `media/` with all 13 product images, to
+      `../thoughttronix-store-backups/before-security-phase2-20261011-153036/`
+      (outside the repo). The copy passed `PRAGMA integrity_check` and had
+      12 users and 35 products.
+  - **Migration:** `accounts/migrations/0002_pending_email_and_unique_email.py`
+    adds `pending_email`, `email_token` and `email_link_sent_at`, and a
+    unique index on `LOWER(email)` that skips blank emails. Applied to the
+    dev database without errors. Afterward: still 12 users and 35 products,
+    all 13 images in `media/products/`, every existing email kept as the
+    confirmed address, and no pending requests.
+  - **Model:** `User` gains `request_email_change`, `confirm_pending_email`
+    and `clear_pending_email`. The manager gains `email_taken` (confirmed
+    addresses only, case-insensitive) and `for_email_token`, which returns
+    the account for a signed link, or nothing if the link is tampered,
+    expired (24 hours from `email_link_sent_at`), replaced, or used. Each
+    request gets a fresh random token, so only the newest link works.
+    Confirming checks uniqueness again. If two accounts race for the same
+    address, the database constraint picks the winner, and the loser keeps
+    its old email and loses its pending request.
+  - **Views and URLs:** `accounts:email_change` (sign-in required, asks for
+    the new address and the current password, and redirects accounts with
+    unusable passwords to the overview with the contact-support message)
+    and `accounts:email_confirm` (public, never signs anyone in or changes
+    who is signed in).
+  - **Emails:** `accounts/emails.py` sends plain-text emails from
+    `templates/accounts/emails/`: the confirmation link to the pending
+    address, and the email-changed notice to the old confirmed address.
+    First-time additions send no notice.
+  - **Templates:** the overview has an **Add email** / **Change email**
+    button. New pages: the email form and the confirmation result
+    (confirmed, address taken, or link no longer valid).
+  - **Admin:** `AdminUserChangeForm` turns a duplicate email into a field
+    error. `UserAdmin.save_model` clears any pending request when an admin
+    changes the email, with no notice. The pending fields are read-only in
+    the admin.
+  - **Settings:** email settings are read from `.env` via environs. The
+    default is the console backend, and the default sender is
+    `ThoughtTronix <no-reply@example.com>`. `.env.example` has commented
+    SMTP placeholders. With no `.env` present, a check confirmed the console
+    backend is active.
+  - **PRD and plan:** both now record the decision to reject a request for
+    the account's own confirmed address, ignoring case.
+  - **Tests:** `accounts/tests.py` gained 27 test functions (29 runs) in the
+    first round. They cover:
+    - the constraint, written straight to the database
+    - button labels
+    - wrong-password and duplicate errors
+    - an address pending on another account not blocking a request
+    - one email per request, sent to the new address
+    - replaced, used, tampered and expired links (24 hours, plus a
+      just-under-24-hours case)
+    - confirming while anonymous and while signed in as someone else
+    - the change notice vs. no notice for a first addition
+    - the two-account race, plus a database-level race
+    - unusable-password accounts being blocked
+    - the admin clearing pending requests, keeping them on unrelated
+      edits, and showing duplicates as form errors
+
+    The Phase 1 test that checked for "no action controls" was narrowed to
+    check only for Change password, since the email buttons now exist.
+  - **Automated results:**
+    - First round: `uv run pytest` passed 373 tests, `uv run ruff check .`
+      reported no problems, and `uv run ruff format --check .` found all 57
+      files formatted.
+    - Second round: after adding the own-address test (see Sideways), 375
+      passed with the same clean Ruff results.
+  - **Browser checks (reported by the user):** adding an email and
+    confirming it in a private window, changing email, a replaced link
+    refused and a reused link refused, wrong-password and duplicate-email
+    errors, and an admin email change clearing a pending request without
+    sending a notice. In a later check, requesting `CUSTOMER@example.com`
+    as `customer` showed the "That's already your confirmed email." error
+    and printed no email.
+  - **Commit:** committed as "Complete Account Security Center Phase 2"
+    with the updated PRD, plan, this log, and the migrated `db.sqlite3`,
+    then pushed to `origin/main`. The backup stays outside the repo.
+  - **Not done:** no seed run or Phase 3 work.
+- **Deviations:**
+  - The agent added a rule the PRD didn't have: a request for your own
+    current confirmed email is rejected. The user accepted it and asked for
+    it to be written into the PRD and plan.
+  - **Confirmation happens on opening the link.** A plain page load
+    confirms the address, as the plan's manual check describes, with no
+    extra button to press. **Known limitation:** an email security scanner
+    or link previewer that opens links automatically could confirm a
+    pending address without the person clicking. The change still needs the
+    current password to request, and the link only confirms the address it
+    was sent to, but a confirm-button step would close this gap if it
+    matters later.
+  - The overview doesn't show the pending address yet; that comes with
+    Resend/Cancel in Phase 3. Until then, the success message is the only
+    sign a request is in progress.
+  - No follow-up questions were asked.
+- **Sideways:**
+  - The first attempt to append tests through a shell heredoc failed with a
+    quoting error, because an apostrophe in a test string broke the
+    heredoc. The tests were added with the file editor instead.
+  - When the own-address rule was added to the plan's acceptance criteria,
+    there turned out to be no automated test for it. The rule had been
+    built but not tested in the first round. A test with two
+    capitalizations was added, so the suite went from 373 to 375.
+
+---
+
 ## 2026-10-11 — Account Security Phase 1: read-only Security Center overview
 
 ### Prompts

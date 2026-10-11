@@ -112,6 +112,7 @@ Sign-in stays username-based. Email is for recovery and notices only.
 **Email add/change and confirmation**
 
 - The add/change form takes the new address and the current password. A valid request sets the pending address, invalidates any earlier link, and sends a confirmation link to the new address. The confirmed address is unchanged.
+- A request for the account's own current confirmed address (ignoring case) is rejected with a form error ("That's already your confirmed email."). No pending request is created and no email is sent.
 - There is one pending request per account. A new request, a resend, a cancel, or a successful confirmation invalidates every earlier link.
 - Confirmation links are signed and expire after **24 hours**. They're tied to the specific pending request, so only the newest link for the current pending address works.
 - The confirmation view does not require sign-in. A valid link confirms exactly the pending address it was issued for. It never signs anyone in and never changes which account is signed in.

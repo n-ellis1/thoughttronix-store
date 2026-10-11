@@ -21,6 +21,11 @@
             Without a confirmed email, password resets and security notices can't reach you.
           </p>
         {% endif %}
+        <div class="card-actions mt-2">
+          <a href="{% url 'accounts:email_change' %}" class="btn btn-primary btn-sm">
+            {% if user.email %}Change email{% else %}Add email{% endif %}
+          </a>
+        </div>
       </div>
     </section>
 

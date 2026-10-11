@@ -1,0 +1,13 @@
+{% autoescape off %}Hi {{ user.username }},
+
+The email address on your ThoughtTronix account was just changed. Recovery emails and security notices will no longer come to this address.
+
+If you made this change, there's nothing more to do.
+
+If you didn't, sign in and review your Security Center right away, then contact support:
+
+{{ security_url }}
+
+— ThoughtTronix
+Your Thoughts, Our Business.
+{% endautoescape %}
