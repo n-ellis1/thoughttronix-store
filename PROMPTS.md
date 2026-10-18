@@ -30,6 +30,104 @@ Each entry has this shape:
 
 ---
 
+## 2026-10-18 — Product reviews Phase 5: demo seed data (isolated verification only)
+
+### Prompts
+
+1. "/implement @prd/product-reviews.md @plans/product-reviews.md implement
+   phase 5"
+2. "That one behavior sounds good. Since the helper gathers purchases across
+   users, make sure another user's order stays paired with that user and
+   never makes someone else eligible. Also check that repeated purchases
+   produce one user/product pair with the earliest qualifying date. Go ahead
+   and show me the failing test, then pause at RED."
+3. "The test looks good. Implement qualifying_purchases so each user/product
+   pair appears once with its earliest qualifying order date. Rerun this test
+   and relevant existing tests, then pause at GREEN. Don't run seed against
+   my current database."
+4. "Looks good. Also exclude order lines whose product is null, since deleted
+   products can leave historical order lines behind. Finish the rest of
+   Phase 5 and the normal tests, then run the full suite and Ruff checks.
+   Verify seed only in the temporary setup, and give me the temporary
+   server's browser-check steps. Wait for my confirmation before marking
+   complete, committing, or pushing."
+5. "All Phase 5 browser checks passed, and I stopped the temporary server.
+   Clean up the temporary setup and confirm my real database and media are
+   unchanged. Mark Phase 5 complete, update PROMPTS.md, commit this phase,
+   and push. Leave REFLECTION.md and db.sqlite3 unstaged."
+
+### Summary
+
+- **Outcome:** Phase 5 of `plans/product-reviews.md` is built and marked
+  complete, which finishes the product reviews feature. All changes are in
+  `products/management/commands/seed.py`, the new `products/test_seed.py`,
+  and the README's `customer` row.
+  - **TDD, one completed RED/GREEN cycle, shown RED on an assertion and
+    approved before the code was written:** `qualifying_purchases()`
+    returns each (user, product) pair bought in a non-cancelled order once,
+    paired with its own buyer and dated by the earliest qualifying order.
+    The test covered the points the user asked for: another user's order
+    never makes the customer eligible, and three orders of one product give
+    one pair. It failed on `assert [] == [...]` against a stub. The fix is
+    one grouped query (`Min("order__created_at")` per user and product),
+    filtered by `reviews.models.QUALIFYING_STATUSES` so the seed and
+    `has_purchased` share one definition of a qualifying status.
+  - **The user's follow-up:** order lines whose product was deleted (null)
+    are excluded. A second test failed first with a `KeyError` before the
+    `product__isnull=False` filter was added.
+  - **Built normally:**
+    - `customer` gains a cancelled Hush order (31 days ago), the only time
+      they ordered Hush, so its page shows the "purchase required" note
+    - the wipe deletes reviews first, and a reviews step runs after orders
+    - `customer`'s two reviews (DreamWeaver; MindSync, author-edited) are
+      listed in `CUSTOMER_REVIEWS` and checked against the qualifying
+      purchases, so the seed fails with `CommandError` rather than break
+      the purchase rule
+    - background buyers review about 60% of their qualifying purchases,
+      with weighted ratings and product-neutral comments, each dated
+      between the order and now
+    - the lowest-rated background review is edited by `employee` ("Edited
+      by ThoughtTronix staff"), and one 5-star review is edited by its
+      author ("Edited")
+    - one seeded RNG, created in `handle`, now drives both orders and
+      reviews
+    - order-count docs updated: the seed's comment (48 + 5 = 53), the
+      `_create_orders` docstring, the module docstring, the summary line
+      (now includes reviews), and the README demo-login table
+  - **Isolated seed check:** a throwaway settings module in the session
+    scratchpad pointed `DATABASES` and `MEDIA_ROOT` at a temporary folder.
+    `migrate` ran, then `seed` twice. A query script showed both runs
+    identical: 53 orders, 43 reviews, no purchase-rule violations, ratings
+    1★ ×5 and 2★ ×1, 11 products with no reviews, two "Edited" reviews and
+    one staff-edited one, and `customer` with two reviewed products, four
+    bought but unreviewed products, and Hush ordered only in a cancelled
+    order. The user ran the browser checks on a server at port 8001 with
+    those settings, and they passed. The temporary folder was then deleted.
+    The `db.sqlite3` checksum and modification time and the `media/`
+    listing matched the fingerprint taken before the check, both before
+    and after clean-up.
+  - **Checks:** 658 tests pass. `ruff check` and `ruff format --check` are
+    clean. No migration this phase. The seed never ran against
+    `db.sqlite3`.
+- **Deviations:**
+  - The agent proposed one TDD behavior, not three, because seed data and
+    docs have no good TDD candidates. The user approved it and specified
+    the cross-user and repeat-purchase cases the test should cover.
+  - The user added the null-product exclusion, which wasn't in the plan.
+  - `customer`'s reviewed products are named in the seed rather than drawn
+    at random, so the demo is predictable. Each one is validated against
+    the qualifying purchases, which keeps to the plan's rule that no pair
+    can break the purchase rule.
+- **Sideways:**
+  1. Adding the Hush order draws from the shared seeded RNG before the
+     background orders, so the background orders differ from the previous
+     seed's. Every run is still identical. This was flagged to the user
+     before the browser check.
+  2. `ruff format` reformatted `seed.py` and `test_seed.py` once before the
+     checks passed.
+
+---
+
 ## 2026-10-18 — Product reviews Phase 4: staff moderation
 
 ### Prompts

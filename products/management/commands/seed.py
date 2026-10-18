@@ -8,8 +8,9 @@ Demo logins (documented in the README):
 
     admin / admin123        superuser
     employee / employee123  staff, "Junior Thought Curator"
-    customer / customer123  a plain customer, with order history, a live cart,
-                            two saved addresses, and a wishlist
+    customer / customer123  a plain customer, with order history (one order
+                            cancelled), a live cart, two saved addresses, a
+                            wishlist, and two product reviews
     newcustomer / newcustomer123
                             a plain customer with no email and an empty
                             wishlist, to show the Security Center's
@@ -25,13 +26,15 @@ from datetime import timedelta
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
+from django.db.models import Min
 from django.utils import timezone
 from django.utils.text import slugify
 
 from orders.models import Address, Cart, DiscountCode, Order, OrderItem
 from products.models import Category, Product, Tag
+from reviews.models import QUALIFYING_STATUSES, Review
 from wishlist.models import WishlistItem
 
 TAGS = [
@@ -511,17 +514,86 @@ DISCOUNT_CODES = [
 
 # The customer demo login's visible order history: (days ago, status,
 # [(product slug, quantity), ...]). Statuses follow age, like the
-# background orders, plus one recent order still in flight.
+# background orders, plus one recent order still in flight. The cancelled
+# Hush order is the only time they ordered Hush, so its page shows the
+# reviews section's "purchase required" note.
 CUSTOMER_ORDERS = [
     (124, Order.Status.DELIVERED, [("mindsync", 1), ("syncrest", 1)]),
     (47, Order.Status.DELIVERED, [("dreamweaver", 1)]),
+    (31, Order.Status.CANCELLED, [("hush", 1)]),
     (9, Order.Status.SHIPPED, [("seraphine-mini", 2), ("seraphine-wall-mount", 1)]),
     (2, Order.Status.PLACED, [("veil", 1)]),
 ]
 
 # Background orders spread across the trailing six months so the Phase 7
-# dashboard has a real time axis. 48 here + 4 above = 52 total.
+# dashboard has a real time axis. 48 here + 5 above = 53 total.
 BACKGROUND_ORDER_COUNT = 48
+
+# The customer demo login's reviews: (product slug, rating, comment,
+# edited). Each must be a product they bought in a non-cancelled order —
+# the seed refuses to run otherwise. Their other purchases stay unreviewed,
+# so those pages show the review form.
+CUSTOMER_REVIEWS = [
+    (
+        "dreamweaver",
+        4,
+        "Slept better than I have in years. I do keep waking up with strong "
+        "opinions about a brand of sparkling water I've never tried.",
+        False,
+    ),
+    (
+        "mindsync",
+        5,
+        "Installation took forty minutes and I was texting by thought before "
+        "the anesthetic wore off.\n\nUpdate: four months in and I can't "
+        "remember what it was like before. I've been told that's normal.",
+        True,
+    ),
+]
+
+# Background buyers review about this share of what they bought.
+BACKGROUND_REVIEW_SHARE = 0.6
+
+# How often each rating (1–5 stars) is chosen: mostly happy buyers, with a
+# few unhappy ones so the averages look real.
+RATING_WEIGHTS = [1, 1, 2, 4, 4]
+
+# Comments for background reviews, by rating. None of them names a
+# product, so any buyer can say any of them about anything they bought.
+REVIEW_COMMENTS = {
+    1: [
+        "Returned it. It's still sending me notifications.",
+        "Stopped working after a week. My family says I haven't.",
+    ],
+    2: [
+        "Does what it promises, which turned out to be the problem.",
+        "Setup was easy. Getting it to stop was not.",
+    ],
+    3: [
+        "Fine. It seems to know more about me than I expected, but fine.",
+        "Works as described. I just wish the description had been shorter.",
+    ],
+    4: [
+        "Great product. My partner says I've been calmer, and I believe them.",
+        "Took a few days to get used to.\nNow I can't imagine going without.",
+        "Very good. Lost one star because it answered a question I hadn't asked yet.",
+    ],
+    5: [
+        "Love it!",
+        "Exactly what I needed. I didn't know I needed it until it told me.",
+        "Bought a second one for my mother.\nShe's been very quiet since, in "
+        "a good way.",
+    ],
+}
+
+# The lowest-rated background review is edited by the `employee` demo
+# login, to show the "Edited by ThoughtTronix staff" label.
+STAFF_EDITED_COMMENT = (
+    "Didn't work for me. [Personal details removed by ThoughtTronix staff.]"
+)
+
+# One happy background review is edited by its own author.
+AUTHOR_EDIT_NOTE = "\n\nUpdate: still going strong."
 
 # Shipping addresses for the background orders. US-only, like checkout.
 SEED_ADDRESSES = [
@@ -541,11 +613,40 @@ CUSTOMER_ADDRESSES = [SEED_ADDRESSES[0], SEED_ADDRESSES[1]]
 CARD_LAST4S = ["4242", "4111", "1881", "0005"]
 
 
+def qualifying_purchases():
+    """Every (user, product) bought in a non-cancelled order, once each.
+
+    Returns ``(user, product, ordered_at)`` tuples, where ``ordered_at``
+    is the date of that user's earliest qualifying order of the product,
+    oldest first. Seeded reviews come only from this list, so each one
+    obeys the purchase rule.
+    """
+    rows = list(
+        OrderItem.objects.filter(
+            order__status__in=QUALIFYING_STATUSES,
+            # A deleted product leaves its lines behind with no product.
+            product__isnull=False,
+        )
+        .values("order__user", "product")
+        .annotate(ordered_at=Min("order__created_at"))
+        .order_by("ordered_at", "order__user", "product")
+    )
+    users = get_user_model().objects.in_bulk({row["order__user"] for row in rows})
+    products = Product.objects.in_bulk({row["product"] for row in rows})
+    return [
+        (users[row["order__user"]], products[row["product"]], row["ordered_at"])
+        for row in rows
+    ]
+
+
 class Command(BaseCommand):
     help = "Wipe and rebuild the demo world: catalog, tags, and demo accounts."
 
     @transaction.atomic
     def handle(self, *args, **options):
+        # One seeded RNG for every random choice keeps every run identical
+        # (the idempotence contract).
+        rng = random.Random(2026)
         self._wipe()
         tags = self._create_tags()
         self._create_catalog(tags)
@@ -553,7 +654,8 @@ class Command(BaseCommand):
         self._create_customer_cart()
         self._create_customer_addresses()
         self._create_customer_wishlist()
-        self._create_orders()
+        self._create_orders(rng)
+        self._create_reviews(rng)
         self._create_discount_codes()
 
         self.stdout.write(
@@ -563,6 +665,7 @@ class Command(BaseCommand):
                 f"{Product.objects.count()} products, "
                 f"{get_user_model().objects.count()} users, "
                 f"{Order.objects.count()} orders, "
+                f"{Review.objects.count()} reviews, "
                 f"{DiscountCode.objects.count()} discount codes, "
                 f"and a live cart and wishlist for 'customer'."
             )
@@ -570,6 +673,7 @@ class Command(BaseCommand):
 
     def _wipe(self):
         """Remove everything the seed owns; the rebuild starts from zero."""
+        Review.objects.all().delete()
         Order.objects.all().delete()
         DiscountCode.objects.all().delete()
         Cart.objects.all().delete()
@@ -658,15 +762,12 @@ class Command(BaseCommand):
             item.created_at = now - timedelta(days=days_ago)
             item.save(update_fields=["created_at"])
 
-    def _create_orders(self):
-        """Order history: 4 visible orders for 'customer', 48 background.
+    def _create_orders(self, rng):
+        """Order history: 5 visible orders for 'customer', 48 background.
 
-        A seeded RNG keeps every run identical (the idempotence
-        contract). Statuses follow age — old orders are delivered,
-        recent ones are still moving, and about one in ten was
-        cancelled along the way.
+        Statuses follow age — old orders are delivered, recent ones are
+        still moving, and about one in ten was cancelled along the way.
         """
-        rng = random.Random(2026)
         now = timezone.now()
         User = get_user_model()
 
@@ -715,6 +816,87 @@ class Command(BaseCommand):
                 ],
                 rng=rng,
             )
+
+    def _create_reviews(self, rng):
+        """Reviews, every one from a qualifying purchase in the seeded orders.
+
+        Each review is dated between its earliest qualifying order and
+        now. 'customer' reviews only the products in CUSTOMER_REVIEWS;
+        background buyers review a random share of what they bought.
+        Products nobody bought, such as the Defense line, have no reviews.
+        """
+        now = timezone.now()
+        employee = get_user_model().objects.get(username="employee")
+        background_usernames = {username for username, *_ in BACKGROUND_CUSTOMERS}
+        purchases = qualifying_purchases()
+
+        def some_time_between(start):
+            return start + (now - start) * rng.uniform(0.1, 0.9)
+
+        customer_bought = {
+            product.slug: ordered_at
+            for user, product, ordered_at in purchases
+            if user.username == "customer"
+        }
+        customer = get_user_model().objects.get(username="customer")
+        for slug, rating, comment, edited in CUSTOMER_REVIEWS:
+            if slug not in customer_bought:
+                raise CommandError(
+                    f"'customer' can't review {slug}: no qualifying order of it."
+                )
+            review = Review.objects.create(
+                user=customer,
+                product=Product.objects.get(slug=slug),
+                rating=rating,
+                comment=comment,
+                created_at=some_time_between(customer_bought[slug]),
+            )
+            if edited:
+                self._mark_edited(
+                    review, customer, some_time_between(review.created_at)
+                )
+
+        background_reviews = []
+        for user, product, ordered_at in purchases:
+            if user.username not in background_usernames:
+                continue
+            if rng.random() >= BACKGROUND_REVIEW_SHARE:
+                continue
+            rating = rng.choices(range(1, 6), weights=RATING_WEIGHTS)[0]
+            background_reviews.append(
+                Review.objects.create(
+                    user=user,
+                    product=product,
+                    rating=rating,
+                    comment=rng.choice(REVIEW_COMMENTS[rating]),
+                    created_at=some_time_between(ordered_at),
+                )
+            )
+
+        # The lowest-rated review, oldest first among ties, gets a staff edit.
+        staff_edited = min(
+            background_reviews, key=lambda review: (review.rating, review.created_at)
+        )
+        staff_edited.comment = STAFF_EDITED_COMMENT
+        self._mark_edited(
+            staff_edited, employee, some_time_between(staff_edited.created_at)
+        )
+
+        author_edited = rng.choice(
+            [review for review in background_reviews if review.rating == 5]
+        )
+        author_edited.comment += AUTHOR_EDIT_NOTE
+        self._mark_edited(
+            author_edited,
+            author_edited.user,
+            some_time_between(author_edited.created_at),
+        )
+
+    def _mark_edited(self, review, editor, edited_at):
+        """Record a backdated edit; ``Review.record_edit`` always uses now."""
+        review.edited_at = edited_at
+        review.edited_by = editor
+        review.save()
 
     def _create_discount_codes(self):
         today = timezone.localdate()

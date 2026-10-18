@@ -288,13 +288,13 @@ Anything that documents the seeded order counts (the seed's own "48 here + 4 abo
 
 ### Acceptance criteria
 
-- [ ] Every seeded review satisfies the purchase rule (a non-cancelled order of that product by that user, dated before the review).
-- [ ] Ratings include at least two 1–2 star reviews, and at least one product has none.
-- [ ] At least one review is labeled "Edited" and at least one "Edited by ThoughtTronix staff" (edited by `employee`).
-- [ ] `customer` has a review, an unreviewed bought product, and a product ordered only in a cancelled order.
-- [ ] The wipe deletes reviews, and running the seed twice gives identical reviews, orders, and counts.
-- [ ] Documentation of order counts matches the new seed.
-- [ ] No test invokes the seed command, and the full suite, `ruff check`, and `ruff format --check` pass.
+- [x] Every seeded review satisfies the purchase rule (a non-cancelled order of that product by that user, dated before the review).
+- [x] Ratings include at least two 1–2 star reviews, and at least one product has none.
+- [x] At least one review is labeled "Edited" and at least one "Edited by ThoughtTronix staff" (edited by `employee`).
+- [x] `customer` has a review, an unreviewed bought product, and a product ordered only in a cancelled order.
+- [x] The wipe deletes reviews, and running the seed twice gives identical reviews, orders, and counts.
+- [x] Documentation of order counts matches the new seed.
+- [x] No test invokes the seed command, and the full suite, `ruff check`, and `ruff format --check` pass.
 
 ### How we'll check it
 
