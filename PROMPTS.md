@@ -30,6 +30,49 @@ Each entry has this shape:
 
 ---
 
+## 2026-10-18 — Wishlist Phase 3 follow-up: commit the skills and verify the seed in isolation
+
+### Prompts
+
+1. "The tdd and implement skills are part of this lab too. Commit both skill
+   folders and push them. Leave REFLECTION.md and db.sqlite3 untouched, and
+   don't run seed."
+2. "Help me verify the wishlist seed data using a separate temporary
+   database. Leave my current db.sqlite3 untouched. Check the seeded
+   wishlist contents and ordering for customer and the empty wishlist for
+   newcustomer. If it passes, update the pending plan checkbox, log this
+   verification in PROMPTS.md, commit those documentation changes, and
+   push."
+
+### Summary
+
+- **Outcome:** `.claude/skills/implement/` and `.claude/skills/tdd/` were
+  committed alone (`bf81b31`) and pushed. The wishlist seed was then
+  verified following the isolated-check procedure from
+  `plans/account-security.md`: a throwaway settings module in the session
+  scratchpad redirected `DATABASES` and `MEDIA_ROOT` to a temporary folder
+  (confirmed before anything ran), then `migrate` and `seed` twice. After
+  each run, `customer`'s wishlist (the page's own queryset) was Pulse Halo
+  (2026-10-15), EchoPatch (2026-10-06, unavailable), MoodSet (2026-09-18),
+  newest first on three distinct dates; `newcustomer` had none; three rows
+  total. Rendering `/wishlist/` from that database showed the same order,
+  one "Unavailable" badge, the empty state for `newcustomer`, and
+  EchoPatch's detail page in the saved state. A SHA-256 checksum, size, and
+  modification time of `db.sqlite3` and a listing of `media/` taken before
+  and after were identical; the temporary folder was deleted. The plan's
+  last Phase 3 checkbox is ticked and its status line records the isolated
+  verification. `REFLECTION.md` and `db.sqlite3` were left uncommitted and
+  unchanged.
+- **Deviations:** none. The isolated-check procedure was reused from the
+  Account Security plan rather than invented.
+- **Sideways:** the check script first failed to import `config` because
+  it ran from the scratchpad without the repo on `PYTHONPATH`; it failed
+  before connecting to any database, and it asserts the database path is
+  the throwaway one before reading. Fixed by adding the repo to
+  `PYTHONPATH`, then re-run after seed run 1 and again after seed run 2.
+
+---
+
 ## 2026-10-18 — Wishlist Phase 3: the wishlist page, navbar link, and demo seed data
 
 ### Prompts

@@ -119,7 +119,7 @@ A new `HtmxLoginRequiredMixin` in `accounts`, next to `StaffRequiredMixin`, over
 
 ## Phase 3: The wishlist page, navigation link, and demo seed data
 
-**Status**: Complete (2026-10-18). Automated suite green; all current-database manual checks passed in the browser. The seed step's manual check is **pending**: the seed has not been run, by the agent or the user.
+**Status**: Complete (2026-10-18). Automated suite green; all current-database manual checks passed in the browser. The seed step was verified (2026-10-18) in an isolated throwaway database and media folder, run twice; `db.sqlite3` and `media/` were confirmed unchanged.
 
 **User stories**: 11, 12, 14, 15, 16, 17, 18, 19, 20, 21, 24, 25
 
@@ -145,7 +145,7 @@ The seed command gains a wishlist step. A module-level list of (product slug, da
 - [x] The page has no remove buttons.
 - [x] Signed-in users see "Wishlist" in the navbar; signed-out visitors don't.
 - [x] The page loads its products without a query per row.
-- [ ] The seed gives `customer` about three backdated items including EchoPatch, gives `newcustomer` none, and wipes wishlist items before rebuilding. Running it twice produces the same result. *(Implemented; pending verification: the seed has not been run.)*
+- [x] The seed gives `customer` about three backdated items including EchoPatch, gives `newcustomer` none, and wipes wishlist items before rebuilding. Running it twice produces the same result. *(Verified in an isolated database: `customer` has Pulse Halo, EchoPatch (Unavailable), MoodSet, newest first on three dates; `newcustomer` has none; three rows total after each run.)*
 - [x] No test invokes the seed command.
 
 ### How we'll check it
