@@ -1228,6 +1228,152 @@ def test_unknown_review_404s(client, customer):
     assert response.status_code == HTTPStatus.NOT_FOUND
 
 
+# --- Staff moderation -------------------------------------------------------------
+
+
+def test_staff_can_save_an_edit_to_another_customers_review(
+    client, staff_user, dana, product
+):
+    """Staff moderate in place, and readers can see the store changed it."""
+    review = make_review(dana, product, rating=1, comment="Rude words.")
+    client.force_login(staff_user)
+
+    response = save_edit(client, review, rating="1", comment="[Removed by staff]")
+
+    assert response.status_code == HTTPStatus.OK
+    review.refresh_from_db()
+    assert (review.comment, review.edited_by) == ("[Removed by staff]", staff_user)
+    assertContains(response, ">Edited by ThoughtTronix staff</span>")
+
+
+def test_staff_see_edit_and_delete_on_every_review(
+    client, staff_user, customer, dana, product
+):
+    """Staff moderate where reviews appear: every card has the controls."""
+    reviews = [
+        make_review(staff_user, product),
+        make_review(customer, product),
+        make_review(dana, product),
+    ]
+    client.force_login(staff_user)
+
+    response = detail(client, product)
+
+    for review in reviews:
+        assertContains(response, f'hx-get="{review_url("edit", review)}"')
+        assertContains(response, f'hx-post="{review_url("delete", review)}"')
+
+
+@pytest.mark.parametrize(
+    ("setup", "state"),
+    [("nothing", "note"), ("bought", "form"), ("reviewed", "own")],
+    ids=["never-bought", "bought-not-reviewed", "own-review"],
+)
+def test_staff_deleting_another_customers_review_leaves_their_own_slot(
+    client, staff_user, dana, product, setup, state
+):
+    """The section comes back with the staff member's slot, not the author's."""
+    if setup == "bought":
+        make_order(staff_user, product)
+    if setup == "reviewed":
+        make_review(staff_user, product, comment="Staff own words.")
+    review = make_review(dana, product, comment="Words from Dana.")
+    client.force_login(staff_user)
+
+    response = client.post(review_url("delete", review), headers={"HX-Request": "true"})
+
+    assert response.status_code == HTTPStatus.OK
+    assertContains(response, '<section id="reviews"')
+    assert not Review.objects.filter(pk=review.pk).exists()
+    assertNotContains(response, "Words from Dana.")
+    assert slot_state(response) == [state]
+    if state == "own":
+        assertContains(response, "Staff own words.")
+        assertContains(response, "1 review<")
+    else:
+        assertContains(response, "No reviews yet")
+
+
+def test_staff_editing_their_own_review_is_labeled_edited(client, staff_user, product):
+    review = make_review(staff_user, product)
+    client.force_login(staff_user)
+
+    response = save_edit(client, review)
+
+    review.refresh_from_db()
+    assert review.edited_by == staff_user
+    assertContains(response, ">Edited</span>")
+    assertNotContains(response, "Edited by ThoughtTronix staff")
+
+
+def test_author_editing_after_staff_returns_the_label_to_edited(
+    client, staff_user, customer, product
+):
+    """The words are the author's again."""
+    review = make_review(customer, product)
+    client.force_login(staff_user)
+    save_edit(client, review, comment="Staff's wording.")
+    client.force_login(customer)
+
+    response = save_edit(client, review, comment="My wording again.")
+
+    review.refresh_from_db()
+    assert review.edited_by == customer
+    assertContains(response, ">Edited</span>")
+    assertNotContains(response, "Edited by ThoughtTronix staff")
+
+
+def test_staff_edit_keeps_the_reviews_date_and_place(
+    client, staff_user, customer, dana, product
+):
+    oldest = make_review(dana, product, comment="Oldest.", days_ago=7)
+    middle = make_review(customer, product, comment="Middle.", days_ago=3)
+    newest = make_review(get_user_model().objects.create_user("third"), product)
+    created_at = middle.created_at
+    client.force_login(staff_user)
+
+    response = save_edit(client, middle, comment="Moderated middle.")
+
+    middle.refresh_from_db()
+    assert middle.created_at == created_at
+    assert list(Review.objects.all()) == [newest, middle, oldest]
+    page = response.content.decode()
+    assert page.index(f'id="review-{newest.pk}"') < page.index("Moderated middle.")
+    assert page.index("Moderated middle.") < page.index("Oldest.")
+
+
+@pytest.mark.parametrize(("name", "method"), ENDPOINTS, ids=ENDPOINT_IDS)
+def test_staff_reach_every_endpoint_for_another_customers_review(
+    client, staff_user, dana, product, name, method
+):
+    review = make_review(dana, product)
+    client.force_login(staff_user)
+
+    response = getattr(client, method)(
+        review_url(name, review),
+        {"rating": "5", "comment": "Moderated."} if method == "post" else {},
+        headers={"HX-Request": "true"},
+    )
+
+    assert response.status_code == HTTPStatus.OK
+
+
+def test_editable_by_staff_is_every_review(
+    staff_user, customer, dana, product, unavailable_product
+):
+    reviews = {
+        make_review(customer, product),
+        make_review(dana, product),
+        make_review(dana, unavailable_product),
+    }
+
+    assert set(Review.objects.editable_by(staff_user)) == reviews
+
+
+def test_staff_may_change_any_review(staff_user, customer, product):
+    assert make_review(customer, product).may_change(staff_user) is True
+
+
 # --- The Django admin -----------------------------------------------------------
 
 

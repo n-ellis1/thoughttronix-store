@@ -249,10 +249,10 @@ All four look the review up within `editable_by(request.user)`, so another user'
 
 ### Acceptance criteria
 
-- [ ] Staff see Edit and Delete on every review on every product page. Customers still see them only on their own review.
-- [ ] Staff can edit and delete any review through the same endpoints. Non-staff still get 404 for others' reviews.
-- [ ] A staff edit of another user's review is labeled "Edited by ThoughtTronix staff". A staff edit of their own review is labeled "Edited". An author edit after a staff edit returns the label to "Edited".
-- [ ] After staff delete someone else's review, the staff member's own slot is unchanged.
+- [x] Staff see Edit and Delete on every review on every product page. Customers still see them only on their own review.
+- [x] Staff can edit and delete any review through the same endpoints. Non-staff still get 404 for others' reviews.
+- [x] A staff edit of another user's review is labeled "Edited by ThoughtTronix staff". A staff edit of their own review is labeled "Edited". An author edit after a staff edit returns the label to "Edited".
+- [x] After staff delete someone else's review, the staff member's own slot is unchanged.
 
 ### How we'll check it
 

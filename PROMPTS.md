@@ -30,6 +30,83 @@ Each entry has this shape:
 
 ---
 
+## 2026-10-18 — Product reviews Phase 4: staff moderation
+
+### Prompts
+
+1. "/implement @prd/product-reviews.md @plans/product-reviews.md implement
+   phase 4"
+2. "Those two look good. Go ahead one test at a time, and pause at RED before
+   implementing each behavior. For the normal tests, also verify staff can
+   actually delete another customer's review and that their own slot stays
+   unchanged."
+3. "The test looks good. Update editable_by to allow staff to access all
+   reviews while keeping customers limited to their own. Rerun this test and
+   relevant regression tests, then pause at GREEN."
+4. "Looks good. Move on to behavior 2 and show me the failing test for staff
+   seeing Edit and Delete on every review card before changing may_change."
+5. "The test looks good. Update may_change to allow staff as well as the
+   author, then rerun this test and relevant regression tests. Pause at
+   GREEN."
+6. "Looks good. Finish the remaining Phase 4 tests, then run the full suite,
+   linter, and formatter checks. Give me the browser verification steps and
+   wait for my confirmation before marking complete, committing, or pushing.
+   Don't start Phase 5 or run seed."
+7. "All six Phase 4 browser checks passed. Mark Phase 4 complete, update
+   PROMPTS.md with the actual session, commit this phase, and push. Leave
+   REFLECTION.md and db.sqlite3 unstaged. Don't start Phase 5 or run seed."
+
+### Summary
+
+- **Outcome:** Phase 4 of `plans/product-reviews.md` is built and marked
+  complete. The only production change is in `reviews/models.py`.
+  - **TDD, two completed RED/GREEN cycles, each shown RED on an assertion
+    and approved before the code was written:**
+    1. Staff can save an edit to another customer's review, which is then
+       labeled "Edited by ThoughtTronix staff". Failed on `assert 404 == 200`.
+       The fix: `editable_by(user)` returns every review when
+       `user.is_staff`, and only the user's own reviews otherwise.
+    2. Staff see Edit and Delete on every card on the product page, both
+       their own pinned review and the others. Failed on a missing
+       `hx-get="/reviews/2/edit/"`. The fix: `may_change(user)` allows any
+       signed-in staff member as well as the author.
+  - **Built normally (tests only; the existing views and `section_context`
+    already handled these):**
+    - staff deleting another customer's review: the review is gone, and the
+      staff member's own slot is unchanged in all three states (note, create
+      form, their pinned review), as the user asked
+    - staff editing their own review is labeled "Edited"
+    - an author edit after a staff edit goes back to "Edited"
+    - a staff edit keeps the review's `created_at` and list position
+    - staff get 200 from card, edit (GET and POST), and delete on another
+      customer's review
+    - `editable_by` and `may_change` unit tests for staff
+    - the existing tests confirming customers still get 404 and see controls
+      only on their own review were unchanged and pass
+  - **Checks:** 656 tests pass, including 135 in `reviews` (14 new).
+    `ruff check` and `ruff format --check` are clean. No migration this
+    phase. The user ran all six Phase 4 browser checks and they passed.
+    Seed was not run.
+- **Deviations:**
+  - The agent proposed two TDD behaviors instead of three. The other
+    criteria (the staff delete slot, the customer 404s) would have passed
+    without new code, so they couldn't produce a real RED. The user approved
+    both and asked for an explicit normal test of staff deleting another
+    customer's review with their slot unchanged. That test was added for all
+    three slot states.
+- **Sideways:**
+  1. In the first full-suite run, the new staff-delete test failed in its
+     own-review case. It searched for "Staff's own words.", but the page
+     escapes the apostrophe as `&#x27;`. The same escaping meant its
+     `assertNotContains(response, "Dana's words.")` could never fail. Both
+     comments were changed to text without apostrophes, a mechanical repair
+     that didn't change what the test asserts. The behavior itself was
+     correct.
+  2. `ruff format` reformatted `reviews/tests.py` once before the checks
+     passed.
+
+---
+
 ## 2026-10-18 — Product reviews Phase 3: editing and deleting your own review
 
 ### Prompts

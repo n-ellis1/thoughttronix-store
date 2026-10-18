@@ -31,11 +31,14 @@ class ReviewQuerySet(models.QuerySet):
         return self.for_product(product).filter(user=user).first()
 
     def editable_by(self, user):
-        """The reviews ``user`` may edit or delete: their own.
+        """The reviews ``user`` may edit or delete: every review for staff,
+        only their own for everyone else.
 
         The edit, card, and delete endpoints look reviews up only here,
-        so anyone else's review is a 404.
+        so a review the user may not change is a 404.
         """
+        if user.is_staff:
+            return self.all()
         return self.filter(user=user)
 
     def summary_for(self, product):
@@ -121,12 +124,13 @@ class Review(models.Model):
         return f"{self.user.username}'s review of {self.product.name}"
 
     def may_change(self, user):
-        """Whether ``user`` may edit or delete this review: its author.
+        """Whether ``user`` may edit or delete this review: its author or
+        any staff member.
 
         Decides only whether Edit and Delete are shown; the endpoints
         enforce the same rule through ``editable_by``.
         """
-        return user.is_authenticated and self.user_id == user.pk
+        return user.is_authenticated and (user.is_staff or self.user_id == user.pk)
 
     def record_edit(self, editor):
         """Save the review as edited now by ``editor``.
