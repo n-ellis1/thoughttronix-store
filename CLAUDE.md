@@ -28,6 +28,11 @@ A server-rendered Django 6 storefront and back office. The PRD (`prd/core-platfo
   and the `seed` command
 - `orders/` — cart, checkout, orders, and back-office order management
 - `dashboard/` — the staff analytics dashboard
+- `wishlist/` — the customer wishlist (`prd/wishlist.md`): one `WishlistItem`
+  per saved (user, product), with `add`/`remove`/`contains` on its manager;
+  idempotent HTMX add/remove endpoints, the `{% wishlist_button product %}`
+  inclusion tag, and the read-only `/wishlist/` page. Depends on `products`;
+  nothing depends on it.
 - `PROMPTS.md` — the AI-usage log; append entries, never rewrite history
 - `templates/` — project-level templates (`base.html`); app templates live in
   `templates/<app>/`

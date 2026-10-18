@@ -30,8 +30,8 @@ The `seed` command creates a fixed demo world — the same one every run:
 | ------------- | ---------------- | ------------------------------------------------------------- |
 | `admin`       | `admin123`       | Superuser: everything below, plus the Django admin at `/admin/` |
 | `employee`    | `employee123`    | Staff: the back office (products, orders, dashboard)           |
-| `customer`    | `customer123`    | A customer with order history and a live cart                  |
-| `newcustomer` | `newcustomer123` | A customer with no email: Account shows the "add an email" reminder |
+| `customer`    | `customer123`    | A customer with order history, a live cart, and a three-item wishlist |
+| `newcustomer` | `newcustomer123` | A customer with no email: Account shows the "add an email" reminder; empty wishlist |
 
 Every seeded account except `newcustomer` starts with a confirmed
 `example.com` email, so password reset and password change work on them

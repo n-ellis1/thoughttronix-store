@@ -5,11 +5,15 @@ from unittest import mock
 
 import pytest
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import AnonymousUser
 from django.db import IntegrityError, transaction
-from django.test import Client
+from django.http import HttpResponse
+from django.test import Client, RequestFactory
 from django.urls import reverse
 from django.utils import timezone
+from django.views import View
 
+from accounts.mixins import HtmxLoginRequiredMixin
 from accounts.models import EMAIL_LINK_LIFETIME, EmailAlreadyConfirmed
 from accounts.ratelimit import RateLimit, reset_requests
 
@@ -1632,3 +1636,43 @@ def test_reset_limit_is_per_address(client, confirmed_customer, mailoutbox):
 
     assert len(mailoutbox) == 1
     assert mailoutbox[0].to == ["customer@example.com"]
+
+
+# --- HtmxLoginRequiredMixin ---------------------------------------------------
+
+
+class HtmxProtectedView(HtmxLoginRequiredMixin, View):
+    def post(self, request):
+        return HttpResponse("ran")
+
+
+def htmx_protected(user, **headers):
+    request = RequestFactory().post("/somewhere/?page=2", headers=headers)
+    request.user = user
+    return HtmxProtectedView.as_view()(request)
+
+
+def test_htmx_mixin_redirects_plain_signed_out_request_like_login_required(db):
+    response = htmx_protected(AnonymousUser())
+
+    assert response.status_code == HTTPStatus.FOUND
+    assert response.url == f"{reverse('accounts:login')}?next=/somewhere/%3Fpage%3D2"
+    assert "HX-Redirect" not in response
+
+
+def test_htmx_mixin_sends_signed_out_htmx_request_to_full_sign_in_page(db):
+    response = htmx_protected(AnonymousUser(), **{"HX-Request": "true"})
+
+    assert response.status_code == HTTPStatus.OK
+    assert response["HX-Redirect"] == (
+        f"{reverse('accounts:login')}?next=/somewhere/%3Fpage%3D2"
+    )
+    assert response.content == b""
+
+
+@pytest.mark.parametrize("headers", [{}, {"HX-Request": "true"}])
+def test_htmx_mixin_lets_signed_in_users_through(customer, headers):
+    response = htmx_protected(customer, **headers)
+
+    assert response.status_code == HTTPStatus.OK
+    assert response.content == b"ran"

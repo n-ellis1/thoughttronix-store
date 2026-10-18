@@ -1,0 +1,28 @@
+{# The wishlist button, in all its states. Rendered on first load by #}
+{# {% wishlist_button product %} and returned by every add/remove response; #}
+{# each signed-in button is an HTMX swap that replaces itself. #}
+{# Signed-out visitors get a plain sign-in link back to the product page. #}
+{% if user.is_authenticated %}
+  {% if saved %}
+    <button
+      hx-post="{% url 'wishlist:remove' product.pk %}"
+      hx-swap="outerHTML"
+      aria-pressed="true"
+      class="btn btn-secondary btn-sm">
+      On your wishlist — remove
+    </button>
+  {% else %}
+    <button
+      hx-post="{% url 'wishlist:add' product.pk %}"
+      hx-swap="outerHTML"
+      aria-pressed="false"
+      class="btn btn-outline btn-secondary btn-sm">
+      Save to wishlist
+    </button>
+  {% endif %}
+{% else %}
+  <a href="{% url 'accounts:login' %}?next={{ product.get_absolute_url|urlencode }}"
+     class="btn btn-outline btn-secondary btn-sm">
+    Save to wishlist
+  </a>
+{% endif %}

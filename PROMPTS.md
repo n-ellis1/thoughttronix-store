@@ -30,6 +30,77 @@ Each entry has this shape:
 
 ---
 
+## 2026-10-18 — Wishlist Phase 3: the wishlist page, navbar link, and demo seed data
+
+### Prompts
+
+1. "/implement @prd/wishlist.md @plans/wishlist.md implement phase 3
+
+   Don't run seed."
+2. "Those three look good. Go ahead one test at a time, and pause at RED so
+   I can review the test and why it failed before you write the
+   implementation."
+3. "The test looks good. Go ahead and scope the list to the signed-in user,
+   keeping newest-first ordering. Then rerun this test and the relevant
+   existing tests, and pause at GREEN."
+4. "Looks good. Go ahead with behavior 2, and show me the failing
+   query-count test before adding select_related."
+5. "The test looks good. Comparing one item with three checks that queries
+   don't increase per row without fixing an exact total. Go ahead and add
+   select_related, then rerun the test and relevant tests and pause at
+   GREEN."
+6. "Looks good. Move on to behavior 3 and show me the failing test for
+   unavailable products staying on the list with an "Unavailable" badge."
+7. "The test looks good. Go ahead and add the conditional badge for
+   unavailable products, then rerun the test and relevant tests and pause
+   at GREEN."
+8. "Looks good. Go ahead and finish the remaining Phase 3 requirements and
+   normal tests, then run the full suite and Ruff checks. Don't run seed.
+   Give me the browser verification steps and wait for my confirmation
+   before marking the phase complete, committing, or pushing."
+9. "The current-database browser checks all passed. I haven't run seed, so
+   leave its manual verification noted as pending.
+
+   Finish the phase using /implement: update the plan and PROMPTS.md,
+   commit the completed wishlist work, and push to GitHub. Preserve my
+   existing REFLECTION.md changes."
+
+### Summary
+
+- **Outcome:** `wishlist:list` at `/wishlist/` is a sign-in-required
+  `ListView` scoped to `request.user`, newest first via the model ordering,
+  with `select_related("product__category")`. The template shows image,
+  linked name, price, saved date, and an "Unavailable" badge, has no remove
+  controls, and has a designed empty state linking to the catalog. A
+  "Wishlist" navbar link sits beside "Addresses". The seed gained
+  `CUSTOMER_WISHLIST` (Pulse Halo 3 days, EchoPatch 12 days, MoodSet 30 days)
+  built with `WishlistItem.objects.add`, and its wipe deletes wishlist items.
+  README demo-logins table and CLAUDE.md's wishlist entry updated. Three
+  behaviors were built test-first (own items newest first; no query per row;
+  a product that becomes unavailable stays with a badge), plus eight normal
+  tests (ten with parametrization). Full suite green: 517 passed. Ruff check
+  and format check clean, `manage.py check` clean, no missing migrations.
+  Current-database browser checks passed. The seed was never run; its manual
+  check is recorded in the plan as pending. This commit also carries the
+  previously uncommitted Phase 1–2 wishlist work; this entry logs only the
+  Phase 3 session.
+- **Deviations:** none. The three proposed TDD behaviors were approved as
+  listed. The user kept the one-item-versus-three query comparison rather
+  than an exact query total.
+- **Sideways:** (1) The first ordering test inserted the newer item first by
+  pk too, so pk ordering would also have passed; it was tightened before
+  being shown at RED. (2) Building the real template revealed that
+  `Product.image_url` falls back to `category.placeholder_image`, which would
+  have reintroduced a query per row; the join was widened to
+  `product__category`. The query-count test was not re-run against the
+  narrower join to prove it catches this. (3) A stray `git stash push
+  wishlist/views.py` was run by mistake; the file is untracked, so nothing
+  was stashed, and the stash list and working tree were checked afterward.
+  (4) The PROMPTS.md insert script failed its own safety checks twice before
+  writing anything; the file was unchanged until the third attempt.
+
+---
+
 ## 2026-10-11 — Account Security Phase 9: seed, admin passwords, docs, and the full PRD review
 
 ### Prompts

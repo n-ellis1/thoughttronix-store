@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% load humanize %}
+
+{% block title %}Your Wishlist — The ThoughtTronix Store{% endblock %}
+
+{% block content %}
+  <h1 class="text-3xl font-bold">Your Wishlist</h1>
+
+  {% if items %}
+    {# Read-only: items are removed from each product's detail page. #}
+    <ul class="mt-6 flex flex-col gap-4">
+      {% for item in items %}
+        {% with product=item.product %}
+          <li class="card card-side bg-base-100 shadow-md">
+            <figure class="w-28 shrink-0">
+              <a href="{{ product.get_absolute_url }}" class="block w-full">
+                <img src="{{ product.image_url }}" alt="{{ product.name }}" loading="lazy"
+                     class="aspect-[4/5] w-full bg-base-200 object-contain" />
+              </a>
+            </figure>
+            <div class="card-body justify-center">
+              <h2 class="card-title">
+                <a href="{{ product.get_absolute_url }}" class="link-hover">{{ product.name }}</a>
+              </h2>
+              <div class="flex flex-wrap items-center gap-2">
+                <p class="flex-none text-lg font-semibold text-primary">${{ product.price|intcomma }}</p>
+                {% if not product.is_available %}
+                  <span class="badge badge-warning badge-outline">Unavailable</span>
+                {% endif %}
+              </div>
+              <p class="text-sm opacity-70">Saved {{ item.created_at|date:"M j, Y" }}</p>
+            </div>
+          </li>
+        {% endwith %}
+      {% endfor %}
+    </ul>
+  {% else %}
+    <div class="py-16 text-center">
+      <p class="text-5xl">💭</p>
+      <p class="mt-4 text-xl font-semibold">Your wishlist is empty</p>
+      <p class="mt-2 opacity-70">Save a product from its page and we'll remember you wanted it.</p>
+      <a href="{% url 'products:catalog' %}" class="btn btn-primary btn-sm mt-6">
+        Browse the catalog
+      </a>
+    </div>
+  {% endif %}
+{% endblock %}

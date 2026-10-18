@@ -9,10 +9,12 @@ Demo logins (documented in the README):
     admin / admin123        superuser
     employee / employee123  staff, "Junior Thought Curator"
     customer / customer123  a plain customer, with order history, a live cart,
-                            and two saved addresses
+                            two saved addresses, and a wishlist
     newcustomer / newcustomer123
-                            a plain customer with no email, to show the
-                            Security Center's missing-email reminder
+                            a plain customer with no email and an empty
+                            wishlist, to show the Security Center's
+                            missing-email reminder and the wishlist's
+                            empty state
 
 Every other seeded email is a confirmed ``example.com`` address with no
 pending request, so the password reset and change flows work immediately.
@@ -30,6 +32,7 @@ from django.utils.text import slugify
 
 from orders.models import Address, Cart, DiscountCode, Order, OrderItem
 from products.models import Category, Product, Tag
+from wishlist.models import WishlistItem
 
 TAGS = [
     "always listening",
@@ -479,6 +482,15 @@ CUSTOMER_CART = [
     ("whisper-alarm-clock", 1),
 ]
 
+# The customer demo login's wishlist: (product slug, days ago). Saved on
+# different dates so the page's newest-first order shows; EchoPatch is
+# unavailable, to show the badge and the saved state of its button.
+CUSTOMER_WISHLIST = [
+    ("pulse-halo", 3),
+    ("echopatch", 12),
+    ("moodset", 30),
+]
+
 # Demo discount codes, one per checkout outcome. Each entry is
 # (code, kind, value, eligible product slugs, expires in days, is_active):
 # an empty slug list means a whole-order code; ``None`` days means no
@@ -540,6 +552,7 @@ class Command(BaseCommand):
         self._create_users()
         self._create_customer_cart()
         self._create_customer_addresses()
+        self._create_customer_wishlist()
         self._create_orders()
         self._create_discount_codes()
 
@@ -551,7 +564,7 @@ class Command(BaseCommand):
                 f"{get_user_model().objects.count()} users, "
                 f"{Order.objects.count()} orders, "
                 f"{DiscountCode.objects.count()} discount codes, "
-                f"and a live cart for 'customer'."
+                f"and a live cart and wishlist for 'customer'."
             )
         )
 
@@ -560,6 +573,7 @@ class Command(BaseCommand):
         Order.objects.all().delete()
         DiscountCode.objects.all().delete()
         Cart.objects.all().delete()
+        WishlistItem.objects.all().delete()
         Product.objects.all().delete()
         Tag.objects.all().delete()
         Category.objects.all().delete()
@@ -634,6 +648,15 @@ class Command(BaseCommand):
                 state=state,
                 zip=zip_code,
             )
+
+    def _create_customer_wishlist(self):
+        """Saved products, backdated so each was added on a different day."""
+        customer = get_user_model().objects.get(username="customer")
+        now = timezone.now()
+        for slug, days_ago in CUSTOMER_WISHLIST:
+            item = WishlistItem.objects.add(customer, Product.objects.get(slug=slug))
+            item.created_at = now - timedelta(days=days_ago)
+            item.save(update_fields=["created_at"])
 
     def _create_orders(self):
         """Order history: 4 visible orders for 'customer', 48 background.
