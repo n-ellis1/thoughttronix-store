@@ -1,6 +1,20 @@
+## Product Reviews
+
+## Question 1
+In Phase 2, I tested duplicate review submissions with test_second_review_gets_the_already_reviewed_error_with_input_kept. This was a good candidate because the expected result was pretty clear. It was supposed to show an error instead of creating another review or overwriting the original. The test checked that the new text and rating stayed in the form, the original review remained unchanged, and only one review existed. It first failed with a 500 response, then it passed with the expected 200 response after duplicate validation was added.
+
+## Question 2
+DeleteReviewView.post() handles deleting reviews in reviews/views.py, lines 150–159. It first calls get_review() at lines 108–113 to check access. That uses editable_by() in reviews/models.py, lines 33–42. Staff can access any review, but customers can access only their own. If a customer tries to delete someone else’s review, they get a 404 and nothing is deleted.
+
+## Question 3
+The review form in templates/reviews/partials/_form.html, lines 8–10, uses hx-post to send the review to reviews:create. That route is in reviews/urls.py, lines 9–13, and leads to CreateReviewView. In reviews/views.py, lines 64–80, the view checks the purchase, validates the form, and saves the review. It returns reviews/partials/_section.html, which contains the reviews section on line 4. HTMX replaces that section using hx-target="#reviews" and hx-swap="outerHTML". The new review, average, and count appear without reloading the whole page.
+
+## Question 4
+One decision I made during grill-me was to replace the whole Reviews section after creating, editing, or deleting a review. Another option was to replace just the affected review and update the average and count separately. I chose the whole section because it was easier to keep everything consistent. The tradeoff is that saving one review closes any other edit forms that are open. This decision appears in prd/product-reviews.md under HTMX swaps, lines 156–160, and the reasoning is explained under Further Notes, line 204.
+
 ## Account Security Center
 
-## Quesiton 1
+## Question 1
 Ok the account was supposed to show the pending email and its status along with the resend and cancel buttons. I tested these were working by clicking resend and opening the old and new confirmation links and then I canceled the other pending change and opened its link. The old link was turned down and the new link was accepted. The cancel ended up removing the pending request without changing the the confirmed address.
 
 ## Question 2
