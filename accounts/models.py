@@ -82,6 +82,19 @@ class User(AbstractUser):
             ),
         ]
 
+    def public_name(self):
+        """The name shown publicly, e.g. on reviews: "Casey M." or "Casey".
+
+        Never the username — sign-in lockout counts failures per username,
+        so a public one would let anyone lock its owner out — and never
+        the full name.
+        """
+        if not self.first_name:
+            return "ThoughtTronix customer"
+        if not self.last_name:
+            return self.first_name
+        return f"{self.first_name} {self.last_name[0]}."
+
     @property
     def email_link_expired(self):
         return (

@@ -1676,3 +1676,26 @@ def test_htmx_mixin_lets_signed_in_users_through(customer, headers):
 
     assert response.status_code == HTTPStatus.OK
     assert response.content == b"ran"
+
+
+# --- Public display name -----------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("first_name", "last_name", "expected"),
+    [
+        ("Casey", "Monroe", "Casey M."),
+        ("Casey", "", "Casey"),
+        ("", "", "ThoughtTronix customer"),
+        ("", "Monroe", "ThoughtTronix customer"),
+    ],
+    ids=["first-and-last", "first-only", "no-name", "last-only"],
+)
+def test_public_name_never_shows_the_username_or_full_name(
+    first_name, last_name, expected
+):
+    user = get_user_model()(
+        username="casey_m", first_name=first_name, last_name=last_name
+    )
+
+    assert user.public_name() == expected

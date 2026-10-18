@@ -33,6 +33,13 @@ A server-rendered Django 6 storefront and back office. The PRD (`prd/core-platfo
   idempotent HTMX add/remove endpoints, the `{% wishlist_button product %}`
   inclusion tag, and the read-only `/wishlist/` page. Depends on `products`;
   nothing depends on it.
+- `reviews/` — product reviews (`prd/product-reviews.md`): one `Review` per
+  (user, product), a 1–5 rating plus a required comment; `edited_at` records
+  whether it was edited and `edited_by` who, with `edit_label` on the model;
+  `summary_for`/`for_product` on its queryset; the `{% reviews_section
+  product %}` inclusion tag on the product detail page. Depends on
+  `products`, `orders`, and `accounts` (`User.public_name()`); nothing
+  depends on it.
 - `PROMPTS.md` — the AI-usage log; append entries, never rewrite history
 - `templates/` — project-level templates (`base.html`); app templates live in
   `templates/<app>/`

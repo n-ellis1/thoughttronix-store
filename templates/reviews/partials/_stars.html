@@ -1,0 +1,9 @@
+{# Five read-only DaisyUI stars with the first ``value`` lit: the star #}
+{# marked aria-current and every star before it. Pass ``average`` to #}
+{# label them with the exact average instead of a whole-star rating. #}
+<div class="rating rating-sm" role="img"
+     aria-label="{% if average %}Average rating {{ average|floatformat:1 }}{% else %}Rated {{ value }}{% endif %} out of 5 stars">
+  {% for star in "12345" %}
+    <div class="mask mask-star-2 bg-warning"{% if forloop.counter == value %} aria-current="true"{% endif %}></div>
+  {% endfor %}
+</div>

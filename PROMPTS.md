@@ -30,6 +30,337 @@ Each entry has this shape:
 
 ---
 
+## 2026-10-18 — Product reviews Phase 1: read-only Reviews section
+
+### Prompts
+
+1. "/implement @prd/product-reviews.md @plans/product-reviews.md implement
+   phase 1"
+2. "Those three look good. Go ahead one behavior and one test at a time.
+   Show me the first test failing on an assertion, and pause before writing
+   the code to make it pass."
+3. "The cases and expected labels look right. Go ahead and implement
+   edit_label, then rerun this test and the relevant existing tests. Pause
+   at GREEN so I can review the result."
+4. "Looks good. Move on to User.public_name(), and show me the failing test
+   before implementing it."
+5. "The test looks good, including the last-name-only case. Go ahead and
+   implement public_name(), then rerun the test and relevant existing
+   tests. Pause at GREEN."
+6. "Looks good. Move on to the summary header's half-up rounding, and show
+   me the failing test before implementing it."
+7. "The test looks good. Go ahead and implement half-up rounding, then
+   rerun this test and the relevant tests. Pause at GREEN."
+8. "Looks good. Finish the remaining Phase 1 requirements and normal tests,
+   then run the full suite, linter, and formatter checks. Give me the
+   browser verification steps and wait for my confirmation before marking
+   the phase complete, committing, or pushing. Don't start Phase 2 or run
+   seed."
+9. "Manual testing hit 'no such table: reviews_review' on DreamWeaver. The
+   reviews migration hadn't been applied to the dev database. I'm applying
+   it now; record this in the session log."
+10. "All Phase 1 manual checks passed, and the automated checks are good.
+    Include the missing dev-database migration issue and its resolution in
+    the session log. Mark Phase 1 complete, update PROMPTS.md, commit the
+    completed phase, and push. Include the product-reviews PRD and plan.
+    Leave my existing REFLECTION.md and db.sqlite3 changes untouched. Don't
+    start Phase 2."
+
+### Summary
+
+- **Outcome:** Phase 1 of `plans/product-reviews.md` is built and marked
+  complete.
+  - **TDD, three behaviors, each shown RED on an assertion and approved
+    before any code was written:**
+    1. `Review.edit_label`, across six cases (never edited, author edit,
+       staff editing their own, staff editing someone else's, author again
+       after staff, last editor deleted).
+    2. `User.public_name()`: "Casey M.", "Casey", and "ThoughtTronix
+       customer" (also used when only a last name is set).
+    3. Half-up star rounding in `summary_for`. The stub used Python's
+       `round()`, so the 4.5 average failed with `4 == 5`. The fix uses
+       `Decimal` with `ROUND_HALF_UP`, as `orders` does.
+  - **Built normally:**
+    - the `reviews` app, the `Review` model, and one migration with the
+      unique pair, rating-range, and `edited_by`-requires-`edited_at`
+      constraints
+    - `for_product` (people loaded with `select_related`)
+    - the admin registration
+    - the `{% reviews_section product %}` inclusion tag, with `_section`,
+      `_card`, and `_stars` partials using DaisyUI's `rating` component
+    - the detail-template hookup; the product detail view is unchanged
+    - the CLAUDE.md layout entry
+  - **Checks:** 565 tests pass, including 44 new in `reviews` (7 of them
+    from the TDD cycles) and 4 new in `accounts`.
+    `ruff check`, `ruff format --check`, and `makemigrations --check` are
+    clean. The user ran every Phase 1 manual check in the browser and they
+    passed. Seed was not run.
+- **Deviations:**
+  - The user approved all three TDD candidates and every test as written.
+  - For the rounding behavior, the agent tested `summary_for`'s `stars`
+    value, not the rendered page, because the template only draws the stars
+    it's given. The page header got ordinary tests afterwards. The user
+    accepted this.
+  - The user confirmed that a name with only a last name falls back to
+    "ThoughtTronix customer".
+- **Sideways:**
+  1. **Missing dev-database migration.** The agent generated
+     `reviews/migrations/0001_initial.py` but never applied it to
+     `db.sqlite3`. The tests passed because pytest builds its own test
+     database. The handoff did say the migration was unapplied and asked the
+     user to run `migrate`, but only in a paragraph above the checks, not as
+     a numbered first step. During manual testing, DreamWeaver's page raised
+     "no such table: reviews_review". The user ran `migrate` themselves and
+     the checks then passed. From now on, a phase that adds a migration will
+     list applying it as step 1 of its browser checks.
+  2. While writing the regular tests, the agent left a garbled date
+     assertion (a dead `if False else` expression). It was replaced with
+     Django's `date` filter on the local time before the tests were run.
+  3. `ruff format` rewrote `edit_label`'s docstring to `""" "", …` because
+     it began with a quote. The agent reworded the docstring.
+  4. Ticking the plan's checkboxes with PowerShell changed the plan's line
+     endings to CRLF. The agent caught it and restored LF before
+     committing.
+
+---
+
+## 2026-10-18 — Product reviews: PRD to phased plan
+
+### Prompts
+
+1. "/prd-to-plan @prd/product-reviews.md — Propose manageable phases that
+   each produce working behavior I can test in the browser. Explain the
+   split and include acceptance criteria and manual checks for each phase.
+   Don't implement anything yet."
+2. "Let's combine Phases 3 and 4 into one phase for editing and deleting
+   your own review. Keep staff moderation separate, giving us five phases
+   total. Keep Phase 2's error handling together with creating reviews.
+   Using one edit URL for GET and POST is fine too. For the seed phase,
+   verify everything using a temporary database only. Don't include a step
+   requiring seed against my current database. Include browser verification
+   using the temporary setup if needed. Make sure the manual checks use the
+   actual current data or explain the setup needed instead of assuming
+   particular purchases exist. Save the revised plan to
+   plans/product-reviews.md. Don't implement anything yet."
+3. "The plan looks good. Update PROMPTS.md using its required format to log
+   this planning session, including the phase merge and the correction to
+   keep all seed verification isolated. Don't implement anything yet."
+
+### Summary
+
+- **Outcome:** `plans/product-reviews.md` written with five phases:
+  1. Read-only Reviews section
+  2. Writing a review, with all of its error handling
+  3. Editing and deleting your own review
+  4. Staff moderation
+  5. Demo seed data, verified in isolation only
+
+  The header records the durable decisions: the `reviews` app and its
+  dependency direction, the `Review` model and constraints, `public_name()`,
+  the URL table, authorization, swap rules, admin, and testing.
+
+  A "Current data for manual checks" section records what a read-only
+  query of `db.sqlite3` actually found:
+  - `customer` has orders #53–#56, none cancelled.
+  - `employee` and `admin` have no orders.
+  - `newcustomer` doesn't exist.
+  - Three products are unavailable.
+  - Several products have never been ordered.
+  - Back-office status changes can be undone.
+
+  Each manual check explains its setup and how to undo it. Phase 5 follows
+  the isolated procedure from `plans/account-security.md`: a throwaway
+  settings module in the scratchpad, `migrate` then `seed` twice, query
+  checks, and a browser check on a separate port (8001). It ends by
+  confirming `db.sqlite3` and `media/` are unchanged. Nothing was
+  implemented, and seed was not run.
+- **Deviations:**
+  - I proposed six phases and asked whether to merge edit-own (3) and
+    delete-own (4). The user merged them and kept staff moderation separate.
+  - The user agreed with my recommendation to keep Phase 2's error handling
+    with creation, and accepted one edit URL for GET and POST.
+  - **Seed correction:** my first proposal's seed phase ended with "you run
+    `seed` against your own database yourself." The user ruled that out.
+    All seed verification, including the browser checks, now runs only
+    against a temporary database, and no step asks anyone to seed the
+    current database.
+  - **Real data:** my first proposal's manual checks assumed the current
+    database matched the seed's `CUSTOMER_ORDERS` and used `newcustomer`.
+    The user asked for checks based on actual data. A read-only query
+    showed `newcustomer` doesn't exist, so the revised checks use
+    `customer` on a never-ordered product, plus `employee`, as non-buyers.
+- **Sideways:**
+  1. My first inspection script was piped into `manage.py shell` on stdin.
+     The interactive console mangled the multi-line loop and raised a
+     `SyntaxError`, so most of the output was lost. I re-ran it with
+     `shell -c "exec(open(...).read())"`. Both scripts were read-only and
+     lived in the session scratchpad.
+  2. The first saved draft had a muddled Phase 3 manual step ("add a fresh
+     DreamWeaver review … (no: `snakamura` already has one)"). I caught it
+     on review and replaced it before reporting: Phase 3 now checks the
+     date and `created_at` stay unchanged, and the list-position check
+     moved to Phase 4, where staff edit a mid-list card. I also tightened
+     the "no access to others' reviews" step.
+  3. Phase 2's manual checks have `employee` complete a real checkout. That
+     leaves one new order in the dev database. The plan and my report say so.
+
+---
+
+## 2026-10-18 — Product reviews: grill-me design session and PRD
+
+### Prompts
+
+1. "/grill-me ThoughtTronix wants customers to leave product reviews. A
+   customer can leave one review per product, with both a rating and a
+   written comment. They can only review products they have purchased.
+   Customers can edit and delete only their own reviews. Staff can edit and
+   delete any review. Creating, editing, and deleting reviews should update
+   smoothly without reloading the full page or making the user lose their
+   place. Help me work through the design decisions. Check the existing
+   code for useful patterns and ask me questions before making decisions.
+   Don't write code or documentation yet."
+2. (Q1, what counts as purchased) "Let's go with A. A placed, shipped, or
+   delivered order should count, but a cancelled one shouldn't. I'm also
+   fine with keeping an existing review if the order gets cancelled later,
+   so we only check purchase eligibility when the review is created."
+3. (Q2, app placement) "Yeah, let's make a new reviews app. ..."
+4. (Q3, rating) "Yeah, 1–5 whole stars works. Let's use the star buttons
+   and validate the range in both the form and database. We don't need half
+   stars."
+5. (Q4, comment rules) "Let's go with B, with a 2,000-character maximum and
+   no minimum beyond requiring a nonblank comment. A short review like
+   'Love it!' seems fine to me. Keep it plain text with line breaks
+   preserved, and reject whitespace-only comments."
+6. (Q5, deletion) "Let's go with A and cascade both. ..."
+7. (Q6, edit tracking) "Let's go with B. Since staff can change someone
+   else's review, readers should be able to tell when that happened. Show
+   'Edited' for a customer's own changes and 'Edited by ThoughtTronix
+   staff' when staff edited another customer's review."
+8. (Q7, layout) "Let's go with A. Put reviews below the main product
+   details, show the average rating and review count, and pin the
+   signed-in user's review at the top. Keep the rest newest first, with a
+   'No reviews yet' empty state. We can leave pagination and catalog-card
+   ratings out of scope."
+9. (Q8, the "your review" slot) "Yeah, the table looks good. Let's use A
+   and show the note when someone hasn't purchased the product ... Staff
+   should need a qualifying purchase to write their own review too, while
+   still being able to edit or delete any review."
+10. (Q9, HTMX swaps) "Let's go with A. Refresh the Reviews section after
+    creating, saving, or deleting ... Edit and Cancel can replace just that
+    review's card. I'm fine with saving one review closing another open
+    edit form, but let's verify in the browser that the swaps don't make
+    the user lose their place."
+11. (Q10, invalid forms) "Let's go with A. If the form is invalid, just
+    update that form with the errors and keep the comment and selected
+    rating. ..."
+12. (Q11, delete confirmation) "Let's use A with hx-confirm. ..."
+13. (Q12, permission enforcement) "Yeah, let's use A. Return 404 if a
+    customer tries to edit or delete someone else's review ... Use 403 for
+    creating without a qualifying purchase, and check permissions on every
+    request instead of just hiding buttons. Reuse the wishlist's login
+    handling for signed-out HTMX requests too."
+14. (Q13, duplicate submissions) "Let's go with A and disable Submit and
+    Save while a request is running. ... Make sure the duplicate check
+    reaches that form error rather than getting blocked with a 403."
+15. (Q14, back office) "Let's go with A and keep moderation on the product
+    pages. ... Put the read-only back-office Reviews tab in the follow-up
+    ideas."
+16. (Q15, reviewer name) "Let's use the first name and last initial, with
+    'ThoughtTronix customer' as the fallback if their name is blank. ..."
+17. (Q16, average display) "Let's go with B. Show five stars rounded to the
+    nearest whole star, plus the average to one decimal and the review
+    count. For zero reviews, just show 'No reviews yet' instead of a
+    rating."
+18. (Q17, seed) "Let's go with A, including a couple of 1–2 star reviews so
+    the ratings have some variety. Make sure the reviews follow the purchase
+    rule and cover the different states you listed. Don't run seed against
+    my current database—we can verify it in a temporary database like we
+    did for the wishlist."
+19. (Q18, unavailable products) "Yeah, let's go with A. If they have a
+    qualifying purchase, they should still be able to review an unavailable
+    product. Existing reviews should stay visible and editable too."
+20. "Those details look right. Staff editing their own review should show
+    'Edited'; staff editing someone else's should show 'Edited by
+    ThoughtTronix staff.' Use prd/product-reviews.md as the PRD filename to
+    match the assignment."
+21. "Those additions are fine. The cancelled demo order helps verify that
+    rule, admin registration follows the existing pattern, and the card GET
+    endpoint makes sense for Cancel. Keep the seed verification isolated
+    from my current database."
+22. "The PRD looks good overall. Please clarify two edge cases: 1. After
+    deleting a review, show the create form only if the customer still has
+    a qualifying purchase. Otherwise show the purchase-required note.
+    2. If the last editor's account is deleted, keep an 'Edited' indicator
+    rather than treating the review as never edited. Clarify how we
+    distinguish those states. Update the PRD only; don't implement anything
+    yet."
+23. "Those updates look good. Keep the plain 'Edited' label when the
+    editor's account has been deleted. Before I clear this session, update
+    PROMPTS.md using the format specified in that file. Log the actual
+    grill-me and PRD conversation, including the decisions and corrections.
+    Don't implement anything yet."
+
+### Summary
+
+- **Outcome:** a design-only session; no code was written and nothing was
+  run against the database. Before asking anything, the agent read the
+  order model and statuses, the wishlist app (manager, views, template tag,
+  `HtmxLoginRequiredMixin`), the cart and checkout HTMX patterns, the
+  ownership mixins, the product detail page, the signup form fields, and
+  the seed. Eighteen grill-me questions settled the design: a new `reviews`
+  app (depends on `products`, `orders`, `accounts`; nothing depends on it);
+  one `Review` per (user, product) with cascading foreign keys; ratings of
+  1–5 whole stars checked in the form and by a database constraint;
+  required plain-text comments of at most 2,000 characters; eligibility
+  meaning a placed, shipped, or delivered order, checked only at creation;
+  a Reviews section below the product grid with a summary header, the
+  viewer's review pinned, and the rest newest first; HTMX writes swapping
+  the whole section, Edit and Cancel swapping one card, and invalid forms
+  re-rendered in place through `HX-Retarget`/`HX-Reswap`; `hx-confirm`
+  on Delete and `hx-disabled-elt` on Submit and Save; 404 for someone
+  else's review and 403 for creating without a purchase; staff moderating
+  on product pages only; `User.public_name()` ("Casey M.", "Casey", or
+  "ThoughtTronix customer"); and seed reviews generated from qualifying
+  seeded orders. `prd/product-reviews.md` was written with `/to-prd` and
+  then revised. The PRD is uncommitted. The existing seed memory note was
+  updated to record that seed is checked only against a throwaway
+  database.
+- **Deviations:** the user overrode one recommendation. On Q4 the agent
+  recommended a 10-character minimum for comments, and the user chose no
+  minimum so that "Love it!" is allowed. On Q15 the agent's own first
+  recommendation was a username fallback; it then suggested "ThoughtTronix
+  customer" instead (a public username would let someone trigger that
+  customer's sign-in lockout), and the user took that. All other questions
+  went with the recommended option, with user additions: browser checks
+  that the swaps keep the reader's place (Q9), duplicate submissions must
+  reach the form error and not a 403 (Q13), and seed checks only in a
+  temporary database (Q17). Three PRD additions the user hadn't discussed
+  were flagged and then accepted: a cancelled order added to the
+  `customer` demo login's history (so the "purchase required" note can be
+  shown for a cancelled-only product), Django admin registration, and a
+  GET "card" endpoint for Cancel. After the edge-case update, the agent
+  pointed out that a review whose editor's account was deleted must have
+  been edited by staff (deleting the author deletes the review), so
+  "Edited by ThoughtTronix staff" could be shown there. The user kept
+  plain "Edited".
+- **Sideways:**
+  (1) In Q12 the agent sketched a single `can_review(user, product)` that
+  combined "has purchased" and "hasn't reviewed yet". Used in the create
+  view, it would have sent duplicate submissions to the 403 path. The
+  user's Q13 answer insisted on the form error, and the design was split
+  into a 403 purchase check followed by a duplicate check in the form.
+  (2) The first PRD had two gaps the user caught on review. It said
+  deleting a review shows the create form again, without considering a
+  customer whose orders have since been cancelled. And it worked out the
+  edit label only from `edited_by`, which becomes null when the editor's
+  account is deleted, so the review would have looked never edited. The
+  fix: after a delete, the slot is chosen from the current database state,
+  as on a fresh page load. `updated_at` was replaced with a nullable
+  `edited_at` that records *whether* a review was edited, `edited_by`
+  records *who*, and a check constraint keeps the two consistent.
+
+---
+
 ## 2026-10-18 — Wishlist Phase 3 follow-up: commit the skills and verify the seed in isolation
 
 ### Prompts

@@ -1,0 +1,16 @@
+{# One review, read-only. Comments are autoescaped; line breaks are kept. #}
+<article id="review-{{ review.pk }}" class="card bg-base-100 shadow-md">
+  <div class="card-body gap-3">
+    <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+      {% include "reviews/partials/_stars.html" with value=review.rating average=None %}
+      <span class="font-semibold">{{ review.user.public_name }}</span>
+      <time datetime="{{ review.created_at|date:"c" }}" class="text-sm opacity-70">
+        {{ review.created_at|date:"M j, Y" }}
+      </time>
+      {% if review.edit_label %}
+        <span class="badge badge-ghost badge-sm">{{ review.edit_label }}</span>
+      {% endif %}
+    </div>
+    <p>{{ review.comment|linebreaksbr }}</p>
+  </div>
+</article>

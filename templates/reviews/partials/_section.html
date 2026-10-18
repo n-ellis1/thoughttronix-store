@@ -1,0 +1,25 @@
+{# The product's Reviews section, rendered by {% reviews_section product %}. #}
+{# Every state is defined here, so the section is rebuilt whole. #}
+<section id="reviews" class="mt-12" aria-labelledby="reviews-heading">
+  <h2 id="reviews-heading" class="text-2xl font-bold">Reviews</h2>
+
+  {% if summary.count %}
+    <div class="mt-4 flex flex-wrap items-center gap-3">
+      {% include "reviews/partials/_stars.html" with value=summary.stars average=summary.average %}
+      <span class="text-lg font-semibold">{{ summary.average|floatformat:1 }}</span>
+      <span class="opacity-70">{{ summary.count }} review{{ summary.count|pluralize }}</span>
+    </div>
+
+    <ul class="mt-6 flex flex-col gap-4">
+      {% for review in reviews %}
+        <li>{% include "reviews/partials/_card.html" %}</li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <div class="mt-4 rounded-box bg-base-100 py-12 text-center shadow-md">
+      <p class="text-5xl">💬</p>
+      <p class="mt-4 text-xl font-semibold">No reviews yet</p>
+      <p class="mt-2 opacity-70">Nobody who bought this has shared their thoughts. Yet.</p>
+    </div>
+  {% endif %}
+</section>
