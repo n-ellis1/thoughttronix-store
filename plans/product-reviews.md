@@ -322,3 +322,16 @@ Anything that documents the seeded order counts (the seed's own "48 here + 4 abo
   5. Stop the server.
 - **Clean-up:** re-check the `db.sqlite3` checksum and modification time and the `media/` listing, and confirm both are unchanged. Delete the temporary directory.
 - **Final check (last step of the feature):** run `uv run pytest`, `uv run ruff check .`, and `uv run ruff format --check .`. All three must pass with no failures or changes needed. Report any failure with its output instead of marking the phase done.
+
+---
+
+## Follow-up notes
+
+Recorded in the final review after Phase 5. Neither one changes behavior, and both are left as they are.
+
+- **Stale requests get no feedback.** htmx 2 doesn't swap 4xx responses, so two stale-tab cases look like nothing happened until the page is reloaded:
+  - a create from a page loaded before the buyer's qualifying order was cancelled gets a 403 (`reviews/views.py`, `CreateReviewView`)
+  - an Edit, Cancel, Save, or Delete on a review that was deleted in the meantime, for example by staff, gets a 404 (`ReviewEndpointMixin.get_review`)
+
+  Both match the PRD, and neither changes any data. A follow-up could show a short message, or re-render the section, in those cases.
+- **The seed's variety picks assume the current constants.** `_create_reviews` in `products/management/commands/seed.py` picks the staff-edited review with `min()` over the background reviews and the author-edited one with `rng.choice()` over the 5-star ones. Both raise if their list is empty. With `BACKGROUND_REVIEW_SHARE`, `RATING_WEIGHTS`, and the fixed seed as they are, a run gives 43 reviews, 16 of them 5-star, so neither list is empty. Lowering the share or changing the weights should be followed by a re-check in a throwaway database.

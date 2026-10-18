@@ -110,11 +110,13 @@ that's out of scope here.
 
 ## Repo layout
 
-`config/` is the project package (settings, root URLs); the four apps are
-`accounts` (custom user model), `products` (the public catalog and its
-back-office CRUD), `orders` (cart, checkout, orders — with the
-`place_order` service in `orders/services.py`), and `dashboard` (staff
-analytics, with the aggregations in `dashboard/queries.py`). Project-level
+`config/` is the project package (settings, root URLs); the six apps are
+`accounts` (custom user model and the Security Center), `products` (the
+public catalog and its back-office CRUD), `orders` (cart, checkout, orders —
+with the `place_order` service in `orders/services.py`), `dashboard` (staff
+analytics, with the aggregations in `dashboard/queries.py`), `wishlist`
+(customers' saved products), and `reviews` (verified-buyer product reviews,
+moderated by staff on the product page). Project-level
 templates live in `templates/`, static sources in `assets/`. The product
 requirements are in `prd/`, the phase-by-phase build plan in `plans/`, and
 `PROMPTS.md` is where AI usage on this codebase gets logged.

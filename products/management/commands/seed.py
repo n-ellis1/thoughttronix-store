@@ -874,6 +874,9 @@ class Command(BaseCommand):
             )
 
         # The lowest-rated review, oldest first among ties, gets a staff edit.
+        # These picks assume the constants above yield background reviews,
+        # some of them 5-star; see the follow-up notes in
+        # plans/product-reviews.md before changing them.
         staff_edited = min(
             background_reviews, key=lambda review: (review.rating, review.created_at)
         )

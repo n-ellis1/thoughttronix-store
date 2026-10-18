@@ -30,6 +30,56 @@ Each entry has this shape:
 
 ---
 
+## 2026-10-18 — Product reviews: final feature review and documentation cleanup
+
+### Prompts
+
+1. "Review the completed product reviews feature against
+   prd/product-reviews.md and the assignment's required behaviors. Report
+   any gaps with file references. Don't write my reflection or change
+   anything yet."
+2. "Update the README's repo layout to include wishlist and reviews. Record
+   the stale-request feedback and seed-constant assumptions as follow-up
+   notes, without changing their behavior. Log this final review and
+   documentation cleanup in PROMPTS.md, commit and push those changes.
+   Leave REFLECTION.md and db.sqlite3 unstaged."
+
+### Summary
+
+- **Outcome:** a read-only review of the finished feature, then
+  documentation-only changes.
+  - **The review:** the agent read the reviews views, form, URLs, admin,
+    template tag, all four partials, the sign-in mixin, `public_name`, the
+    product detail template, the test list, and the compiled DaisyUI
+    `rating` CSS. The assignment's text isn't in the repo, so the agent used
+    the requirements in the grill-me session's first prompt. All six
+    behaviors and all 45 PRD user stories map to code and tests. Three gaps
+    were reported:
+    1. the README's repo layout still listed four apps, missing `wishlist`
+       and `reviews`
+    2. stale requests (a 403 create after a cancellation, a 404 on a review
+       deleted elsewhere) get no visible feedback, because htmx 2 doesn't
+       swap 4xx responses
+    3. the seed's `min()` and `rng.choice()` variety picks would raise if
+       the review constants ever produced no background or 5-star reviews
+  - **Checked and found fine:** an unselected rating input shows dimmed
+    stars (DaisyUI 5 lights stars only up to the checked one), comments are
+    escaped before `linebreaksbr`, and Submit and Save both disable while a
+    request is in flight.
+  - **The cleanup:**
+    - `README.md`: the repo layout names all six apps
+    - `plans/product-reviews.md`: a new "Follow-up notes" section records
+      gaps 2 and 3, with behavior unchanged
+    - `seed.py`: a comment at the variety picks points to those notes. It's
+      a comment only, with no code change.
+  - **Checks:** the full suite, `ruff check`, and `ruff format --check`
+    pass. Seed was not run.
+- **Deviations:** none. The user chose to document gaps 2 and 3 rather
+  than fix them.
+- **Sideways:** none.
+
+---
+
 ## 2026-10-18 — Product reviews Phase 5: demo seed data (isolated verification only)
 
 ### Prompts
