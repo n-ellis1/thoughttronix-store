@@ -14,3 +14,9 @@ def reviews_section(context, product):
     number of reviews.
     """
     return section_context(product, context["user"])
+
+
+@register.filter
+def changeable_by(review, user):
+    """``{% if review|changeable_by:user %}`` — whether to show Edit and Delete."""
+    return review.may_change(user)

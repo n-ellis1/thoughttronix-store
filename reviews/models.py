@@ -30,6 +30,14 @@ class ReviewQuerySet(models.QuerySet):
             return None
         return self.for_product(product).filter(user=user).first()
 
+    def editable_by(self, user):
+        """The reviews ``user`` may edit or delete: their own.
+
+        The edit, card, and delete endpoints look reviews up only here,
+        so anyone else's review is a 404.
+        """
+        return self.filter(user=user)
+
     def summary_for(self, product):
         """The product's ``average``, review ``count``, and whole ``stars``.
 
@@ -111,6 +119,24 @@ class Review(models.Model):
 
     def __str__(self):
         return f"{self.user.username}'s review of {self.product.name}"
+
+    def may_change(self, user):
+        """Whether ``user`` may edit or delete this review: its author.
+
+        Decides only whether Edit and Delete are shown; the endpoints
+        enforce the same rule through ``editable_by``.
+        """
+        return user.is_authenticated and self.user_id == user.pk
+
+    def record_edit(self, editor):
+        """Save the review as edited now by ``editor``.
+
+        Only ``edited_at`` and ``edited_by`` change besides the words, so
+        the date written, and with it the review's place, stay put.
+        """
+        self.edited_at = timezone.now()
+        self.edited_by = editor
+        self.save()
 
     @property
     def edit_label(self):

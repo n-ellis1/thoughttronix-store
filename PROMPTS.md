@@ -30,6 +30,103 @@ Each entry has this shape:
 
 ---
 
+## 2026-10-18 — Product reviews Phase 3: editing and deleting your own review
+
+### Prompts
+
+1. "/implement @prd/product-reviews.md @plans/product-reviews.md implement
+   phase 3"
+2. "Those three look good. Go ahead one behavior and one test at a time.
+   Show me the first test failing on an assertion and pause at RED before
+   implementing the behavior."
+3. "The test looks good. Implement the edit POST and update the duplicate
+   validation to exclude the review being edited. Rerun this test and
+   relevant regression tests, then pause at GREEN. We'll handle the
+   ownership restriction in behavior 2 before finishing the phase."
+4. "The valid-save result looks good. Move on to behavior 2 and show me the
+   failing ownership test before adding the restriction. Make sure invalid
+   edits are rejected and leave the database unchanged during the remaining
+   normal implementation."
+5. "The test looks right. Add editable_by and use it in the shared lookup,
+   then rerun this test and relevant regression tests. Pause at GREEN.
+   If behavior 3 already passes when we reach it, keep it as a regression
+   test and report that honestly. Don't change working code just to
+   manufacture a RED."
+6. "Looks good. Go ahead and run behavior 3's test. If it already passes,
+   keep it as regression coverage and report that; no need to force a RED."
+7. "Looks good. Record behavior 3 as regression coverage that passed
+   immediately, not a completed RED/GREEN cycle. Finish the remaining
+   Phase 3 requirements and normal tests, especially rejecting invalid edits
+   without changing the database. Run the full suite, linter, and formatter
+   checks, then give me the browser steps and wait for approval before
+   marking complete, committing, or pushing. Don't start Phase 4 or run
+   seed."
+8. "All eight Phase 3 browser checks passed. Mark Phase 3 complete, update
+   PROMPTS.md, commit this phase, and push. Record behavior 3 as regression
+   coverage that passed immediately, not a RED/GREEN cycle. Leave
+   REFLECTION.md and db.sqlite3 unstaged. Don't start Phase 4 or run seed."
+
+### Summary
+
+- **Outcome:** Phase 3 of `plans/product-reviews.md` is built and marked
+  complete.
+  - **TDD, two completed RED/GREEN cycles, each shown RED on an assertion
+    and approved before the code was written:**
+    1. Saving an edit updates the rating and comment, sets `edited_by` and
+       `edited_at`, keeps `created_at`, and returns the whole section with
+       the new average and "Edited". The route and edit-form GET were built
+       as scaffolding, so the test failed on `assert 405 == 200`. The fix:
+       `Review.record_edit(editor)`, `EditReviewView.post`, and
+       `ReviewForm.clean()` excluding the instance being edited.
+    2. Another customer gets 404 from card, edit (GET and POST), and delete,
+       and the review is unchanged. With the card and delete routes as
+       scaffolding and one shared `get_review()` lookup over all reviews,
+       all four cases failed on `assert 200 == 404`. The fix:
+       `ReviewQuerySet.editable_by(user)`, used in that lookup.
+  - **Behavior 3 is regression coverage, not a RED/GREEN cycle.** The test
+    that the post-delete slot follows the database (create form if a
+    qualifying purchase remains, the note if it's cancelled) passed on its
+    first run. The delete view built as behavior 2's scaffolding already
+    returned the shared `section_context`, which picks the slot from the
+    database. Per the user, no working code was changed to force a RED; the
+    test was kept as regression coverage.
+  - **Built normally:**
+    - invalid edits return only the edit form, input kept, retargeted at
+      `#review-<pk>`, with the database unchanged (tested for a
+      whitespace-only comment, a missing rating, rating 6, and 2,001
+      characters); create and edit share a module-level `form_invalid`
+    - `Review.may_change(user)` and a `changeable_by` filter showing Edit
+      and Delete on the viewer's own card only; Delete uses `hx-confirm`
+    - the edit mode of `_form.html` (takes the card's id, Save, and a Cancel
+      button that GETs `reviews:card`), with per-review `auto_id`s
+    - tests for the card and edit-form endpoints, controls, `editable_by`,
+      list position after an edit, editing with no qualifying purchase
+      (available and unavailable product), delete updating the summary, and
+      signed-out HTMX and plain requests to all four endpoints
+  - **Checks:** 642 tests pass, including 121 in `reviews` (30 new).
+    `ruff check` and `ruff format --check` are clean. No migration this
+    phase. The user ran all eight Phase 3 browser checks and they passed.
+    Seed was not run.
+- **Deviations:**
+  - The user approved all three TDD candidates and both RED tests as
+    written.
+  - The agent flagged before writing behavior 3's test that it would likely
+    pass immediately; the user chose to keep it as regression coverage
+    rather than replace the behavior or force a RED.
+- **Sideways:**
+  1. Between behavior 1's GREEN and the normal implementation,
+     `EditReviewView.post` ignored `is_valid()`, so an invalid edit would
+     have been saved, and every per-review endpoint looked reviews up among
+     all reviews. Both were deliberate, minimal-code gaps, called out at
+     each GREEN and closed (behavior 2, then the invalid-edit branch with
+     its database-unchanged test) before the phase was checked.
+  2. `ruff format` reformatted `reviews/tests.py` and `reviews/urls.py`
+     once before the checks passed.
+  3. Phase 4 follow-up: `editable_by` and `may_change` state the same rule
+     separately, so both must widen to staff together.
+
+---
+
 ## 2026-10-18 — Product reviews Phase 2: writing a review
 
 ### Prompts

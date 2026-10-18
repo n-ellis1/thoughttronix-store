@@ -1,12 +1,16 @@
-{# The create form. A valid submit swaps the whole Reviews section; an #}
-{# invalid one comes back as this form alone, with its errors and input. #}
-<form id="review-form" class="card bg-base-100 shadow-md"
-      hx-post="{% url 'reviews:create' product.pk %}"
+{# The create form, or — for a saved review — its edit form, which takes #}
+{# the card's id so Edit and Cancel swap one for the other. A valid #}
+{# submit swaps the whole Reviews section; an invalid one comes back as #}
+{# this form alone, with its errors and input. #}
+{% with review=form.instance %}
+<form id="{% if review.pk %}review-{{ review.pk }}{% else %}review-form{% endif %}"
+      class="card bg-base-100 shadow-md"
+      hx-post="{% if review.pk %}{% url 'reviews:edit' review.pk %}{% else %}{% url 'reviews:create' product.pk %}{% endif %}"
       hx-target="#reviews"
       hx-swap="outerHTML"
       hx-disabled-elt="find button[type='submit']">
   <div class="card-body gap-4">
-    <h3 class="card-title text-lg">Write a review</h3>
+    <h3 class="card-title text-lg">{% if review.pk %}Edit your review{% else %}Write a review{% endif %}</h3>
 
     {% for error in form.non_field_errors %}
       <div role="alert" class="alert alert-error alert-soft">{{ error }}</div>
@@ -35,7 +39,16 @@
     </div>
 
     <div class="card-actions justify-end">
-      <button type="submit" class="btn btn-primary">Submit review</button>
+      {% if review.pk %}
+        <button type="button" class="btn btn-ghost"
+                hx-get="{% url 'reviews:card' review.pk %}"
+                hx-target="#review-{{ review.pk }}"
+                hx-swap="outerHTML">
+          Cancel
+        </button>
+      {% endif %}
+      <button type="submit" class="btn btn-primary">{% if review.pk %}Save{% else %}Submit review{% endif %}</button>
     </div>
   </div>
 </form>
+{% endwith %}

@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import AnonymousUser
 from django.db import IntegrityError, connection, transaction
 from django.template.defaultfilters import date
 from django.template.loader import render_to_string
@@ -891,6 +892,340 @@ def test_signed_in_section_query_count_does_not_grow_with_reviews(
         detail(client, product)
 
     assert len(two_reviews) == len(one_review)
+
+
+# --- Editing and deleting a review ----------------------------------------------
+
+
+def edit_url(review):
+    return reverse("reviews:edit", kwargs={"pk": review.pk})
+
+
+def test_saving_an_edit_updates_the_review_and_returns_the_section(
+    client, customer, dana, product
+):
+    """The words change; when it was written, and so its place, never do."""
+    make_order(customer, product)
+    review = make_review(
+        customer, product, rating=2, comment="First thoughts.", days_ago=5
+    )
+    make_review(dana, product, rating=4, comment="Not bad.")
+    created_at = review.created_at
+    before = timezone.now()
+    client.force_login(customer)
+
+    response = client.post(
+        edit_url(review),
+        {"rating": "5", "comment": "Second thoughts."},
+        headers={"HX-Request": "true"},
+    )
+
+    assert response.status_code == HTTPStatus.OK
+    names = [template.name for template in response.templates]
+    assert "reviews/partials/_section.html" in names
+    assert "base.html" not in names
+    review.refresh_from_db()
+    assert (review.rating, review.comment) == (5, "Second thoughts.")
+    assert review.edited_by == customer
+    assert review.edited_at >= before
+    assert review.created_at == created_at
+    page = response.content.decode()
+    assert '<span class="text-lg font-semibold">4.5</span>' in page
+    assert ">Edited</span>" in page
+    assert (
+        page.index("Your review")
+        < page.index("Second thoughts.")
+        < page.index("Not bad.")
+    )
+    assert "First thoughts." not in page
+
+
+@pytest.mark.parametrize(
+    ("name", "method"),
+    [("card", "get"), ("edit", "get"), ("edit", "post"), ("delete", "post")],
+    ids=["card", "edit-form", "save", "delete"],
+)
+def test_another_customers_review_is_not_found_and_unchanged(
+    client, customer, dana, product, name, method
+):
+    """Hiding the buttons is never the only protection."""
+    make_order(customer, product)
+    review = make_review(dana, product, rating=2, comment="Dana's own words.")
+    client.force_login(customer)
+
+    response = getattr(client, method)(
+        reverse(f"reviews:{name}", kwargs={"pk": review.pk}),
+        {"rating": "5", "comment": "Not Dana's words."} if method == "post" else {},
+        headers={"HX-Request": "true"},
+    )
+
+    assert response.status_code == HTTPStatus.NOT_FOUND
+    review.refresh_from_db()
+    assert (review.rating, review.comment) == (2, "Dana's own words.")
+    assert (review.edited_at, review.edited_by) == (None, None)
+
+
+@pytest.mark.parametrize(
+    ("status", "state"),
+    [(Order.Status.DELIVERED, "form"), (Order.Status.CANCELLED, "note")],
+    ids=["purchase-kept", "purchase-cancelled"],
+)
+def test_after_deleting_the_slot_follows_the_database(
+    client, customer, product, status, state
+):
+    """The form comes back only for someone still allowed to submit it."""
+    make_order(customer, product, status)
+    review = make_review(customer, product, comment="Changed my mind.")
+    client.force_login(customer)
+
+    response = client.post(
+        reverse("reviews:delete", kwargs={"pk": review.pk}),
+        headers={"HX-Request": "true"},
+    )
+
+    assert response.status_code == HTTPStatus.OK
+    assertContains(response, '<section id="reviews"')
+    assert not Review.objects.exists()
+    assert slot_state(response) == [state]
+    assertContains(response, "No reviews yet")
+    assertNotContains(response, "Changed my mind.")
+
+
+def review_url(name, review):
+    return reverse(f"reviews:{name}", kwargs={"pk": review.pk})
+
+
+def save_edit(client, review, rating="5", comment="Second thoughts."):
+    """Submit the edit form the way HTMX does; None leaves a field out."""
+    data = {"rating": rating, "comment": comment}
+    return client.post(
+        review_url("edit", review),
+        {name: value for name, value in data.items() if value is not None},
+        headers={"HX-Request": "true"},
+    )
+
+
+@pytest.mark.parametrize(
+    ("rating", "comment", "error", "kept_rating"),
+    [
+        ("3", "   ", "Write a comment — even a short one.", "3"),
+        (None, "New words.", "Pick a star rating.", None),
+        ("6", "New words.", "Pick a rating from 1 to 5 stars.", None),
+        (
+            "3",
+            "x" * 2001,
+            "Keep your comment to 2000 characters or fewer (it has 2001).",
+            "3",
+        ),
+    ],
+    ids=["whitespace-comment", "missing-rating", "rating-6", "comment-2001-chars"],
+)
+def test_invalid_edit_returns_only_its_form_and_changes_nothing(
+    client, customer, product, rating, comment, error, kept_rating
+):
+    make_order(customer, product)
+    review = make_review(customer, product, rating=2, comment="First thoughts.")
+    client.force_login(customer)
+
+    response = save_edit(client, review, rating=rating, comment=comment)
+
+    assert response.status_code == HTTPStatus.OK
+    assert_form_only(response)
+    assertContains(response, error)
+    assertContains(response, comment.strip() or 'name="comment"')
+    assert checked_rating(response) == kept_rating
+    assertContains(response, f'id="review-{review.pk}"')
+    assert response["HX-Retarget"] == f"#review-{review.pk}"
+    assert response["HX-Reswap"] == "outerHTML"
+    review.refresh_from_db()
+    assert (review.rating, review.comment) == (2, "First thoughts.")
+    assert (review.edited_at, review.edited_by) == (None, None)
+
+
+def test_edit_form_endpoint_returns_just_the_filled_in_form(client, customer, product):
+    review = make_review(customer, product, rating=3, comment="Current words.")
+    client.force_login(customer)
+
+    response = client.get(review_url("edit", review), headers={"HX-Request": "true"})
+
+    assert response.status_code == HTTPStatus.OK
+    assert_form_only(response)
+    assertContains(response, f'<form id="review-{review.pk}"')
+    assertContains(response, f'hx-post="{review_url("edit", review)}"')
+    assertContains(response, f'hx-get="{review_url("card", review)}"')
+    assertContains(response, "Current words.")
+    assert checked_rating(response) == "3"
+    assertContains(response, "hx-disabled-elt=\"find button[type='submit']\"")
+    assertNotContains(response, "Write a review")
+
+
+def test_card_endpoint_returns_just_the_normal_card(client, customer, product):
+    review = make_review(customer, product, comment="Current words.")
+    client.force_login(customer)
+
+    response = client.get(review_url("card", review), headers={"HX-Request": "true"})
+
+    assert response.status_code == HTTPStatus.OK
+    names = [template.name for template in response.templates]
+    assert "reviews/partials/_card.html" in names
+    assert "reviews/partials/_form.html" not in names
+    assert "reviews/partials/_section.html" not in names
+    assert "base.html" not in names
+    assertContains(response, f'<article id="review-{review.pk}"')
+    assertContains(response, "Current words.")
+    assertContains(response, f'hx-get="{review_url("edit", review)}"')
+
+
+def test_edit_and_delete_appear_only_on_the_viewers_own_review(
+    client, customer, dana, product
+):
+    own = make_review(customer, product)
+    other = make_review(dana, product)
+    client.force_login(customer)
+
+    response = detail(client, product)
+
+    assertContains(response, review_url("edit", own))
+    assertContains(response, review_url("delete", own))
+    assertContains(response, 'hx-confirm="Delete this review? This can\'t be undone."')
+    assertNotContains(response, review_url("edit", other))
+    assertNotContains(response, review_url("delete", other))
+
+
+def test_signed_out_viewers_see_no_controls(client, dana, product):
+    review = make_review(dana, product)
+
+    response = detail(client, product)
+
+    assertNotContains(response, review_url("edit", review))
+    assertNotContains(response, review_url("delete", review))
+
+
+def test_may_change_only_the_authors_own_review(customer, dana, product):
+    review = make_review(customer, product)
+
+    assert review.may_change(customer) is True
+    assert review.may_change(dana) is False
+    assert review.may_change(AnonymousUser()) is False
+
+
+def test_editable_by_is_only_the_users_own_reviews(
+    customer, dana, product, unavailable_product
+):
+    own = make_review(customer, product)
+    own_other_product = make_review(customer, unavailable_product)
+    make_review(dana, product)
+
+    assert set(Review.objects.editable_by(customer)) == {own, own_other_product}
+
+
+def test_saving_an_edit_keeps_the_reviews_place(
+    client, customer, staff_user, dana, product
+):
+    oldest = make_review(dana, product, days_ago=7)
+    middle = make_review(customer, product, days_ago=3)
+    newest = make_review(staff_user, product)
+    client.force_login(customer)
+
+    save_edit(client, middle)
+
+    assert list(Review.objects.all()) == [newest, middle, oldest]
+
+
+@pytest.mark.parametrize(
+    "fixture", ["product", "unavailable_product"], ids=["available", "unavailable"]
+)
+def test_saving_an_edit_needs_no_qualifying_purchase(
+    request, client, customer, fixture
+):
+    """Eligibility applies only when the review is written."""
+    shown = request.getfixturevalue(fixture)
+    make_order(customer, shown, Order.Status.CANCELLED)
+    review = make_review(customer, shown, rating=2)
+    client.force_login(customer)
+
+    response = save_edit(client, review, rating="4", comment="Still mine.")
+
+    assert response.status_code == HTTPStatus.OK
+    review.refresh_from_db()
+    assert (review.rating, review.comment, review.edited_by) == (
+        4,
+        "Still mine.",
+        customer,
+    )
+    assertContains(response, ">Edited</span>")
+
+
+def test_deleting_updates_the_summary_and_keeps_others(client, customer, dana, product):
+    make_order(customer, product)
+    own = make_review(customer, product, rating=1)
+    make_review(dana, product, rating=5, comment="Dana stays.")
+    client.force_login(customer)
+
+    response = client.post(review_url("delete", own), headers={"HX-Request": "true"})
+
+    assert list(Review.objects.values_list("user", flat=True)) == [dana.pk]
+    assertContains(response, "1 review<")
+    assertContains(response, '<span class="text-lg font-semibold">5.0</span>')
+    assertContains(response, "Dana stays.")
+    assertNotContains(response, "No reviews yet")
+
+
+ENDPOINTS = [("card", "get"), ("edit", "get"), ("edit", "post"), ("delete", "post")]
+ENDPOINT_IDS = ["card", "edit-form", "save", "delete"]
+
+
+@pytest.mark.parametrize(("name", "method"), ENDPOINTS, ids=ENDPOINT_IDS)
+def test_signed_out_htmx_request_gets_hx_redirect_and_changes_nothing(
+    client, customer, product, name, method
+):
+    review = make_review(customer, product, rating=2, comment="First thoughts.")
+
+    response = getattr(client, method)(
+        review_url(name, review),
+        {"rating": "5", "comment": "Changed."} if method == "post" else {},
+        headers={"HX-Request": "true"},
+    )
+
+    assert response.status_code == HTTPStatus.OK
+    assert response["HX-Redirect"] == (
+        f"{reverse('accounts:login')}?next={product.get_absolute_url()}"
+    )
+    review.refresh_from_db()
+    assert (review.rating, review.comment, review.edited_at) == (
+        2,
+        "First thoughts.",
+        None,
+    )
+
+
+@pytest.mark.parametrize(("name", "method"), ENDPOINTS, ids=ENDPOINT_IDS)
+def test_signed_out_plain_request_redirects_and_changes_nothing(
+    client, customer, product, name, method
+):
+    review = make_review(customer, product, rating=2, comment="First thoughts.")
+
+    response = getattr(client, method)(
+        review_url(name, review),
+        {"rating": "5", "comment": "Changed."} if method == "post" else {},
+    )
+
+    assert response.status_code == HTTPStatus.FOUND
+    assert response.url.startswith(reverse("accounts:login"))
+    review.refresh_from_db()
+    assert (review.rating, review.comment, review.edited_at) == (
+        2,
+        "First thoughts.",
+        None,
+    )
+
+
+def test_unknown_review_404s(client, customer):
+    client.force_login(customer)
+
+    response = client.get(reverse("reviews:card", kwargs={"pk": 999}))
+
+    assert response.status_code == HTTPStatus.NOT_FOUND
 
 
 # --- The Django admin -----------------------------------------------------------

@@ -47,11 +47,16 @@ class ReviewForm(forms.ModelForm):
         """Refuse a second review of the same product, keeping the input.
 
         Django skips the (user, product) constraint here because neither
-        is a form field, so the form checks it itself.
+        is a form field, so the form checks it itself. An edit form's own
+        review isn't a second one.
         """
         cleaned_data = super().clean()
-        if Review.objects.filter(
-            user=self.instance.user, product=self.instance.product
-        ).exists():
+        if (
+            Review.objects.filter(
+                user=self.instance.user, product=self.instance.product
+            )
+            .exclude(pk=self.instance.pk)
+            .exists()
+        ):
             raise forms.ValidationError(ALREADY_REVIEWED, code="already_reviewed")
         return cleaned_data

@@ -215,14 +215,14 @@ All four look the review up within `editable_by(request.user)`, so another user'
 
 ### Acceptance criteria
 
-- [ ] Edit and Delete appear on the viewer's own review only. Other customers' cards show no controls.
-- [ ] The edit and card endpoints return just the card, in edit and normal mode respectively.
-- [ ] Saving updates the rating and comment, sets `edited_by` and `edited_at`, leaves `created_at` and list position unchanged, updates the summary, and shows "Edited".
-- [ ] Saving works with no qualifying purchase left (no purchase re-check), including on an unavailable product.
-- [ ] An invalid save re-renders only the form with errors, input kept, and retarget headers set. Nothing changes.
-- [ ] Deleting removes the review and returns the section. The slot then shows the create form if a qualifying purchase remains, and the note if it doesn't. The summary and empty state update.
-- [ ] Another customer gets 404 from card, edit (GET and POST), and delete, and nothing changes.
-- [ ] Signed out: an HTMX request gets an `HX-Redirect` with the product as `next`, a plain request is redirected, and neither changes data.
+- [x] Edit and Delete appear on the viewer's own review only. Other customers' cards show no controls.
+- [x] The edit and card endpoints return just the card, in edit and normal mode respectively.
+- [x] Saving updates the rating and comment, sets `edited_by` and `edited_at`, leaves `created_at` and list position unchanged, updates the summary, and shows "Edited".
+- [x] Saving works with no qualifying purchase left (no purchase re-check), including on an unavailable product.
+- [x] An invalid save re-renders only the form with errors, input kept, and retarget headers set. Nothing changes.
+- [x] Deleting removes the review and returns the section. The slot then shows the create form if a qualifying purchase remains, and the note if it doesn't. The summary and empty state update.
+- [x] Another customer gets 404 from card, edit (GET and POST), and delete, and nothing changes.
+- [x] Signed out: an HTMX request gets an `HX-Redirect` with the product as `next`, a plain request is redirected, and neither changes data.
 
 ### How we'll check it
 
