@@ -1,3 +1,4 @@
+import re
 from datetime import timedelta
 from http import HTTPStatus
 from pathlib import Path
@@ -7,11 +8,15 @@ from django.contrib.auth import get_user_model
 from django.db import IntegrityError, connection, transaction
 from django.template.defaultfilters import date
 from django.template.loader import render_to_string
+from django.test import Client
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 from pytest_django.asserts import assertContains, assertNotContains
 
+from orders.models import Order, OrderItem
+
+from .forms import ReviewForm
 from .models import Review
 
 
@@ -38,6 +43,36 @@ def make_review(user, product, rating=4, comment="Does what it says.", days_ago=
         comment=comment,
         created_at=timezone.now() - timedelta(days=days_ago),
     )
+
+
+def make_order(user, product, status=Order.Status.PLACED):
+    """An order of one ``product`` by ``user``, in the given status."""
+    order = Order.objects.create(
+        user=user,
+        status=status,
+        subtotal=product.price,
+        total=product.price,
+        email="buyer@example.com",
+        shipping_name="Casey Monroe",
+        shipping_street="214 Synapse Street",
+        shipping_city="Canyon",
+        shipping_state="TX",
+        shipping_zip="79015",
+        billing_name="Casey Monroe",
+        billing_street="214 Synapse Street",
+        billing_city="Canyon",
+        billing_state="TX",
+        billing_zip="79015",
+        card_last4="4242",
+    )
+    OrderItem.objects.create(
+        order=order,
+        product=product,
+        product_name=product.name,
+        unit_price=product.price,
+        quantity=1,
+    )
+    return order
 
 
 def mark_edited(review, editor):
@@ -127,6 +162,29 @@ def test_summary_is_one_query(customer, staff_user, product, django_assert_num_q
 
     with django_assert_num_queries(1):
         Review.objects.summary_for(product)
+
+
+@pytest.mark.parametrize(
+    ("buyer", "status", "purchased"),
+    [
+        ("customer", Order.Status.PLACED, True),
+        ("customer", Order.Status.SHIPPED, True),
+        ("customer", Order.Status.DELIVERED, True),
+        ("customer", Order.Status.CANCELLED, False),
+        ("dana", Order.Status.DELIVERED, False),
+        (None, None, False),
+    ],
+    ids=["placed", "shipped", "delivered", "cancelled", "another-user", "no-orders"],
+)
+def test_has_purchased(
+    request, customer, product, unavailable_product, buyer, status, purchased
+):
+    """Only the customer's own non-cancelled orders of *this* product count."""
+    make_order(customer, unavailable_product)  # a different product never counts
+    if buyer:
+        make_order(request.getfixturevalue(buyer), product, status)
+
+    assert Review.objects.has_purchased(customer, product) is purchased
 
 
 def test_str(customer, product):
@@ -404,6 +462,435 @@ def test_section_query_count_does_not_grow_with_reviews(
         detail(client, product)
 
     assert len(three_reviews) == len(one_review)
+
+
+# --- Writing a review -----------------------------------------------------------
+
+
+def create_url(product):
+    return reverse("reviews:create", kwargs={"pk": product.pk})
+
+
+def post_review(client, product, rating="4", comment="Love it!"):
+    """Submit the create form the way HTMX does; None leaves a field out."""
+    data = {"rating": rating, "comment": comment}
+    return client.post(
+        create_url(product),
+        {name: value for name, value in data.items() if value is not None},
+        headers={"HX-Request": "true"},
+    )
+
+
+def checked_rating(response):
+    """The value of the checked star radio in the response, or None."""
+    for star in re.findall(r"<input\b[^>]*>", response.content.decode()):
+        if 'name="rating"' in star and re.search(r"\bchecked\b", star):
+            return re.search(r'value="(\d+)"', star).group(1)
+    return None
+
+
+def assert_form_only(response):
+    """The response is the review form alone — not the section, not a page."""
+    names = [template.name for template in response.templates]
+    assert "reviews/partials/_form.html" in names
+    assert "reviews/partials/_section.html" not in names
+    assert "base.html" not in names
+
+
+def test_invalid_review_returns_only_the_form_retargeted_with_input_kept(
+    client, customer, product
+):
+    """A whitespace-only comment is empty: the form comes back on its own,
+    swapped over itself, so nothing else on the page changes."""
+    make_order(customer, product)
+    client.force_login(customer)
+
+    response = post_review(client, product, rating="4", comment="   ")
+
+    assert response.status_code == HTTPStatus.OK
+    assert_form_only(response)
+    assertContains(response, "Write a comment — even a short one.")
+    assert checked_rating(response) == "4"
+    assert response.headers.get("HX-Retarget") == "#review-form"
+    assert response.headers.get("HX-Reswap") == "outerHTML"
+    assert Review.objects.count() == 0
+
+
+def test_second_review_gets_the_already_reviewed_error_with_input_kept(
+    customer, product
+):
+    """A stale tab's submit is neither refused nor allowed to overwrite.
+
+    A server error comes back as a 500 response rather than raising, so
+    a crash fails the status assertion like any other wrong answer.
+    """
+    make_order(customer, product)
+    existing = make_review(customer, product, rating=5, comment="Original words.")
+    client = Client(raise_request_exception=False)
+    client.force_login(customer)
+
+    response = post_review(client, product, rating="2", comment="Second thoughts.")
+
+    assert response.status_code == HTTPStatus.OK
+    assertContains(response, "already reviewed this product. Edit your review instead.")
+    assertContains(response, "Second thoughts.")
+    assert checked_rating(response) == "2"
+    existing.refresh_from_db()
+    assert (existing.rating, existing.comment) == (5, "Original words.")
+    assert Review.objects.count() == 1
+
+
+def test_simultaneous_duplicate_gets_the_same_error(
+    client, customer, product, monkeypatch
+):
+    """Both submits of a true race pass clean(); the database refuses one."""
+    make_order(customer, product)
+    existing = make_review(customer, product, rating=5, comment="Original words.")
+    # As if this submit had been validated before the other one was saved.
+    monkeypatch.setattr(ReviewForm, "clean", lambda form: form.cleaned_data)
+    client.force_login(customer)
+
+    response = post_review(client, product, rating="2", comment="Second thoughts.")
+
+    assert response.status_code == HTTPStatus.OK
+    assert_form_only(response)
+    assertContains(response, "already reviewed this product. Edit your review instead.")
+    assertContains(response, "Second thoughts.")
+    assert response["HX-Retarget"] == "#review-form"
+    existing.refresh_from_db()
+    assert (existing.rating, existing.comment) == (5, "Original words.")
+    assert Review.objects.count() == 1
+
+
+def test_buyer_review_is_saved_and_the_section_returned_with_it_pinned(
+    client, customer, dana, product
+):
+    make_order(customer, product)
+    make_review(dana, product, rating=2, comment="Not for me.")
+    customer.first_name, customer.last_name = "Casey", "Monroe"
+    customer.save()
+    client.force_login(customer)
+
+    response = post_review(client, product, rating="4", comment="Love it!")
+
+    assert response.status_code == HTTPStatus.OK
+    names = [template.name for template in response.templates]
+    assert "reviews/partials/_section.html" in names
+    assert "base.html" not in names
+    assert "HX-Retarget" not in response
+    review = Review.objects.get(user=customer)
+    assert (review.product, review.rating, review.comment) == (product, 4, "Love it!")
+    assert review.edited_at is None
+    page = response.content.decode()
+    assert '<section id="reviews"' in page
+    assert "2 reviews" in page
+    assert '<span class="text-lg font-semibold">3.0</span>' in page
+    assert (
+        page.index("Your review") < page.index("Love it!") < page.index("Not for me.")
+    )
+    assert "Casey M." in page
+    assert 'id="review-form"' not in page
+
+
+@pytest.mark.parametrize(
+    "status",
+    [None, Order.Status.CANCELLED],
+    ids=["never-bought", "cancelled-only"],
+)
+def test_review_without_a_qualifying_purchase_is_refused(
+    client, customer, product, status
+):
+    if status:
+        make_order(customer, product, status)
+    client.force_login(customer)
+
+    response = post_review(client, product)
+
+    assert response.status_code == HTTPStatus.FORBIDDEN
+    assert Review.objects.count() == 0
+
+
+def test_purchase_is_checked_before_the_form(client, customer, product):
+    """A non-buyer's invalid submit is still a 403, not form errors."""
+    client.force_login(customer)
+
+    response = post_review(client, product, rating=None, comment="   ")
+
+    assert response.status_code == HTTPStatus.FORBIDDEN
+
+
+@pytest.mark.parametrize(
+    ("rating", "comment", "error", "kept_rating"),
+    [
+        (None, "Love it!", "Pick a star rating.", None),
+        ("0", "Love it!", "Pick a rating from 1 to 5 stars.", None),
+        ("6", "Love it!", "Pick a rating from 1 to 5 stars.", None),
+        (
+            "4",
+            "x" * 2001,
+            "Keep your comment to 2000 characters or fewer (it has 2001).",
+            "4",
+        ),
+    ],
+    ids=["missing-rating", "rating-0", "rating-6", "comment-2001-chars"],
+)
+def test_invalid_review_is_rejected_with_errors_and_input_kept(
+    client, customer, product, rating, comment, error, kept_rating
+):
+    make_order(customer, product)
+    client.force_login(customer)
+
+    response = post_review(client, product, rating=rating, comment=comment)
+
+    assert response.status_code == HTTPStatus.OK
+    assert_form_only(response)
+    assertContains(response, error)
+    assertContains(response, comment)
+    assert checked_rating(response) == kept_rating
+    assert response["HX-Retarget"] == "#review-form"
+    assert response["HX-Reswap"] == "outerHTML"
+    assert Review.objects.count() == 0
+
+
+def test_comment_of_exactly_2000_characters_is_accepted(client, customer, product):
+    make_order(customer, product)
+    client.force_login(customer)
+
+    post_review(client, product, comment="x" * 2000)
+
+    assert Review.objects.get().comment == "x" * 2000
+
+
+def test_short_comment_is_accepted_and_stripped(client, customer, product):
+    make_order(customer, product)
+    client.force_login(customer)
+
+    post_review(client, product, comment="  Love it!  ")
+
+    assert Review.objects.get().comment == "Love it!"
+
+
+def test_buyer_can_review_an_unavailable_product(client, customer, unavailable_product):
+    make_order(customer, unavailable_product, Order.Status.DELIVERED)
+    client.force_login(customer)
+
+    response = post_review(client, unavailable_product)
+
+    assert response.status_code == HTTPStatus.OK
+    assert Review.objects.get().product == unavailable_product
+
+
+def test_review_survives_a_later_cancellation(client, customer, product):
+    order = make_order(customer, product)
+    client.force_login(customer)
+    post_review(client, product, comment="Written in good faith.")
+
+    order.status = Order.Status.CANCELLED
+    order.save()
+    response = detail(client, product)
+
+    assert Review.objects.count() == 1
+    assertContains(response, "Your review")
+    assertContains(response, "Written in good faith.")
+    assertNotContains(response, "purchased this product")
+
+
+def test_staff_follow_the_same_purchase_rule(client, staff_user, product):
+    client.force_login(staff_user)
+
+    refused = post_review(client, product)
+    make_order(staff_user, product)
+    accepted = post_review(client, product)
+
+    assert refused.status_code == HTTPStatus.FORBIDDEN
+    assert accepted.status_code == HTTPStatus.OK
+    assert Review.objects.get().user == staff_user
+
+
+def test_signed_out_htmx_post_gets_hx_redirect_and_saves_nothing(
+    client, customer, product
+):
+    make_order(customer, product)
+
+    response = post_review(client, product)
+
+    assert response.status_code == HTTPStatus.OK
+    assert response["HX-Redirect"] == (
+        f"{reverse('accounts:login')}?next={product.get_absolute_url()}"
+    )
+    assert Review.objects.count() == 0
+
+
+def test_signed_out_plain_post_redirects_to_sign_in_and_saves_nothing(client, product):
+    response = client.post(create_url(product), {"rating": "4", "comment": "Hi"})
+
+    assert response.status_code == HTTPStatus.FOUND
+    assert response.url.startswith(reverse("accounts:login"))
+    assert Review.objects.count() == 0
+
+
+def test_unknown_product_404s(client, customer):
+    client.force_login(customer)
+
+    response = client.post(reverse("reviews:create", kwargs={"pk": 999}))
+
+    assert response.status_code == HTTPStatus.NOT_FOUND
+
+
+def test_get_is_rejected(client, customer, product):
+    make_order(customer, product)
+    client.force_login(customer)
+
+    response = client.get(create_url(product))
+
+    assert response.status_code == HTTPStatus.METHOD_NOT_ALLOWED
+
+
+# --- The "your review" slot on the product page -------------------------------
+
+NOTE = "Only customers who've purchased this product can review it."
+SIGN_IN = "Sign in to write a review"
+
+
+def slot_state(response):
+    """Which of the slot's states the page shows: one of each, or a mix."""
+    page = response.content.decode()
+    shown = {
+        "sign-in": SIGN_IN in page,
+        "note": "purchased this product can review it" in page,
+        "form": 'id="review-form"' in page,
+        "own": "Your review" in page,
+    }
+    return [state for state, present in shown.items() if present]
+
+
+def test_signed_out_slot_links_to_sign_in_and_back(client, product):
+    response = detail(client, product)
+
+    assert slot_state(response) == ["sign-in"]
+    login = f"{reverse('accounts:login')}?next={product.get_absolute_url()}"
+    assertContains(response, f'<a href="{login}"')
+
+
+def test_signing_in_from_the_link_returns_to_the_product(client, customer, product):
+    response = client.post(
+        f"{reverse('accounts:login')}?next={product.get_absolute_url()}",
+        {"username": "customer", "password": "customer123"},
+    )
+
+    assert response.status_code == HTTPStatus.FOUND
+    assert response.url == product.get_absolute_url()
+
+
+@pytest.mark.parametrize(
+    ("viewer", "status", "state"),
+    [
+        ("customer", None, "note"),
+        ("customer", Order.Status.CANCELLED, "note"),
+        ("customer", Order.Status.PLACED, "form"),
+        ("customer", Order.Status.SHIPPED, "form"),
+        ("customer", Order.Status.DELIVERED, "form"),
+        ("staff_user", None, "note"),
+        ("staff_user", Order.Status.DELIVERED, "form"),
+    ],
+    ids=[
+        "never-bought",
+        "cancelled-only",
+        "placed",
+        "shipped",
+        "delivered",
+        "staff-never-bought",
+        "staff-bought",
+    ],
+)
+@pytest.mark.parametrize("fixture", ["product", "unavailable_product"])
+def test_signed_in_slot_follows_the_purchase_rule(
+    request, client, viewer, status, state, fixture
+):
+    user = request.getfixturevalue(viewer)
+    shown = request.getfixturevalue(fixture)
+    if status:
+        make_order(user, shown, status)
+    client.force_login(user)
+
+    response = detail(client, shown)
+
+    assert slot_state(response) == [state]
+    if state == "note":
+        assertContains(response, NOTE)
+        assertNotContains(response, create_url(shown))
+    else:
+        assertContains(response, f'hx-post="{create_url(shown)}"')
+
+
+def test_create_form_offers_five_labelled_stars_and_disables_submit(
+    client, customer, product
+):
+    make_order(customer, product)
+    client.force_login(customer)
+
+    response = detail(client, product)
+
+    for stars in range(1, 6):
+        assertContains(response, f'aria-label="{stars} star{"s" if stars > 1 else ""}"')
+    assert checked_rating(response) is None
+    assertContains(response, "hx-disabled-elt=\"find button[type='submit']\"")
+    assertContains(response, 'hx-target="#reviews"')
+
+
+def test_own_review_is_pinned_once_above_the_others(
+    client, customer, staff_user, dana, product
+):
+    make_order(customer, product)
+    make_review(dana, product, comment="Newest of all.")
+    make_review(customer, product, comment="My own words.", days_ago=5)
+    make_review(staff_user, product, comment="Middle of the pack.", days_ago=2)
+    client.force_login(customer)
+
+    response = detail(client, product)
+
+    assert slot_state(response) == ["own"]
+    assertContains(response, "My own words.", count=1)
+    page = response.content.decode()
+    assert (
+        page.index("My own words.")
+        < page.index("Newest of all.")
+        < page.index("Middle of the pack.")
+    )
+    assertContains(response, "3 reviews")
+
+
+def test_own_review_is_pinned_even_without_a_qualifying_purchase(
+    client, customer, product
+):
+    make_review(customer, product, comment="From before the cancellation.")
+    client.force_login(customer)
+
+    assert slot_state(detail(client, product)) == ["own"]
+
+
+def test_another_customers_review_is_never_pinned(client, customer, dana, product):
+    make_order(customer, product)
+    make_review(dana, product)
+    client.force_login(customer)
+
+    assert slot_state(detail(client, product)) == ["form"]
+
+
+def test_signed_in_section_query_count_does_not_grow_with_reviews(
+    client, customer, staff_user, dana, product
+):
+    make_order(customer, product)
+    client.force_login(customer)
+    make_review(dana, product)
+    with CaptureQueriesContext(connection) as one_review:
+        detail(client, product)
+
+    mark_edited(make_review(staff_user, product), staff_user)
+    with CaptureQueriesContext(connection) as two_reviews:
+        detail(client, product)
+
+    assert len(two_reviews) == len(one_review)
 
 
 # --- The Django admin -----------------------------------------------------------

@@ -1,5 +1,6 @@
-{# The product's Reviews section, rendered by {% reviews_section product %}. #}
-{# Every state is defined here, so the section is rebuilt whole. #}
+{# The product's Reviews section, rendered by {% reviews_section product %} #}
+{# and returned by every create response. Every state is defined here, #}
+{# so the section is rebuilt whole. #}
 <section id="reviews" class="mt-12" aria-labelledby="reviews-heading">
   <h2 id="reviews-heading" class="text-2xl font-bold">Reviews</h2>
 
@@ -9,17 +10,38 @@
       <span class="text-lg font-semibold">{{ summary.average|floatformat:1 }}</span>
       <span class="opacity-70">{{ summary.count }} review{{ summary.count|pluralize }}</span>
     </div>
-
-    <ul class="mt-6 flex flex-col gap-4">
-      {% for review in reviews %}
-        <li>{% include "reviews/partials/_card.html" %}</li>
-      {% endfor %}
-    </ul>
   {% else %}
     <div class="mt-4 rounded-box bg-base-100 py-12 text-center shadow-md">
       <p class="text-5xl">💬</p>
       <p class="mt-4 text-xl font-semibold">No reviews yet</p>
       <p class="mt-2 opacity-70">Nobody who bought this has shared their thoughts. Yet.</p>
     </div>
+  {% endif %}
+
+  {# The viewer's slot: their own review, the form, or why there's neither. #}
+  <div class="mt-6">
+    {% if not user.is_authenticated %}
+      <a href="{% url 'accounts:login' %}?next={{ product.get_absolute_url|urlencode }}"
+         class="btn btn-outline btn-primary btn-sm">
+        Sign in to write a review
+      </a>
+    {% elif own_review %}
+      <p class="mb-2 text-sm font-semibold opacity-70">Your review</p>
+      {% include "reviews/partials/_card.html" with review=own_review %}
+    {% elif form %}
+      {% include "reviews/partials/_form.html" %}
+    {% else %}
+      <div role="note" class="alert alert-info alert-soft">
+        Only customers who've purchased this product can review it.
+      </div>
+    {% endif %}
+  </div>
+
+  {% if reviews %}
+    <ul class="mt-6 flex flex-col gap-4">
+      {% for review in reviews %}
+        <li>{% include "reviews/partials/_card.html" %}</li>
+      {% endfor %}
+    </ul>
   {% endif %}
 </section>

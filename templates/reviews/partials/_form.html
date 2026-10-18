@@ -1,0 +1,41 @@
+{# The create form. A valid submit swaps the whole Reviews section; an #}
+{# invalid one comes back as this form alone, with its errors and input. #}
+<form id="review-form" class="card bg-base-100 shadow-md"
+      hx-post="{% url 'reviews:create' product.pk %}"
+      hx-target="#reviews"
+      hx-swap="outerHTML"
+      hx-disabled-elt="find button[type='submit']">
+  <div class="card-body gap-4">
+    <h3 class="card-title text-lg">Write a review</h3>
+
+    {% for error in form.non_field_errors %}
+      <div role="alert" class="alert alert-error alert-soft">{{ error }}</div>
+    {% endfor %}
+
+    <fieldset>
+      <legend class="label mb-1">Your rating</legend>
+      <div class="rating rating-lg">
+        {% for value, label in form.fields.rating.choices %}
+          <input type="radio" name="{{ form.rating.html_name }}" value="{{ value }}"
+                 class="mask mask-star-2 bg-warning" aria-label="{{ label }}"
+                 {% if form.rating.value|stringformat:"s" == value|stringformat:"s" %}checked{% endif %} />
+        {% endfor %}
+      </div>
+      {% for error in form.rating.errors %}
+        <p class="mt-1 text-sm text-error">{{ error }}</p>
+      {% endfor %}
+    </fieldset>
+
+    <div>
+      <label class="label mb-1" for="{{ form.comment.id_for_label }}">Your comment</label>
+      {{ form.comment }}
+      {% for error in form.comment.errors %}
+        <p class="mt-1 text-sm text-error">{{ error }}</p>
+      {% endfor %}
+    </div>
+
+    <div class="card-actions justify-end">
+      <button type="submit" class="btn btn-primary">Submit review</button>
+    </div>
+  </div>
+</form>

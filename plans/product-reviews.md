@@ -160,17 +160,17 @@ Invalid forms return 200 with only the form, keeping the stars and text, with `H
 
 ### Acceptance criteria
 
-- [ ] Each slot state renders for the right viewer, including staff, and on an unavailable product.
-- [ ] The signed-out link goes to sign-in with `next` set to the product, and signing in returns there.
-- [ ] `has_purchased` is true for placed, shipped, and delivered orders, and false for cancelled orders, another user's orders, and no orders.
-- [ ] A buyer's valid POST saves the review and returns the whole section, with the summary updated and their review pinned first.
-- [ ] A non-buyer and a cancelled-only buyer each get 403, and nothing is saved.
-- [ ] A whitespace-only comment, a missing rating, an out-of-range rating, and a 2,001-character comment are each rejected. The form is re-rendered with errors and the input kept, the retarget headers are set, and nothing is saved.
-- [ ] A second review gets the "already reviewed" form error with the text kept (not a 403), and the existing review is unchanged. A simulated `IntegrityError` gives the same result.
-- [ ] A buyer can review an unavailable product.
-- [ ] A review survives a later cancellation of its order.
-- [ ] A signed-out HTMX POST gets an `HX-Redirect` to sign-in with the product as `next`. A plain signed-out POST redirects to sign-in. Neither saves anything.
-- [ ] Submit is disabled while its request is in flight (`hx-disabled-elt` present).
+- [x] Each slot state renders for the right viewer, including staff, and on an unavailable product.
+- [x] The signed-out link goes to sign-in with `next` set to the product, and signing in returns there.
+- [x] `has_purchased` is true for placed, shipped, and delivered orders, and false for cancelled orders, another user's orders, and no orders.
+- [x] A buyer's valid POST saves the review and returns the whole section, with the summary updated and their review pinned first.
+- [x] A non-buyer and a cancelled-only buyer each get 403, and nothing is saved.
+- [x] A whitespace-only comment, a missing rating, an out-of-range rating, and a 2,001-character comment are each rejected. The form is re-rendered with errors and the input kept, the retarget headers are set, and nothing is saved.
+- [x] A second review gets the "already reviewed" form error with the text kept (not a 403), and the existing review is unchanged. A simulated `IntegrityError` gives the same result.
+- [x] A buyer can review an unavailable product.
+- [x] A review survives a later cancellation of its order.
+- [x] A signed-out HTMX POST gets an `HX-Redirect` to sign-in with the product as `next`. A plain signed-out POST redirects to sign-in. Neither saves anything.
+- [x] Submit is disabled while its request is in flight (`hx-disabled-elt` present).
 
 ### How we'll check it
 

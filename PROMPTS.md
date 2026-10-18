@@ -30,6 +30,113 @@ Each entry has this shape:
 
 ---
 
+## 2026-10-18 — Product reviews Phase 2: writing a review
+
+### Prompts
+
+1. "/implement @prd/product-reviews.md @plans/product-reviews.md implement
+   phase 2"
+2. "Those three look good. Go ahead one behavior and one test at a time.
+   Show me the first assertion failure and pause at RED before implementing
+   the behavior."
+3. "The test looks good. Go ahead and implement has_purchased as a single
+   exists query scoped to the user, product, and qualifying order status.
+   Rerun the test and relevant existing tests, then pause at GREEN."
+4. "The implementation looks right. Confirm the has_purchased test and
+   relevant existing tests passed. If they're green, move on to behavior 2
+   and show me the failing duplicate-review test before implementing that
+   behavior."
+5. "Let's keep the skill's assertion-failure requirement. Use Django's test
+   client with raise_request_exception=False for this test so the current
+   crash becomes a 500 response. Then the expected 200 assertion should
+   fail. Show me the full test and the assertion failure before
+   implementing duplicate handling. No temporary error-handling code is
+   needed in the view."
+6. "The test looks right. Go ahead and add the duplicate validation in
+   ReviewForm.clean(). Then rerun this test and relevant existing tests,
+   and pause at GREEN. Keep the race-condition handling for the remaining
+   normal implementation and tests."
+7. "Looks good. Confirm the duplicate-review test and relevant regression
+   tests passed, then move on to behavior 3. Show me the invalid-form test
+   failing on an assertion and pause before implementing the retarget
+   behavior."
+8. "The test looks good. Add both headers to the invalid-form response so
+   only the form is replaced. Rerun this test and the relevant tests, then
+   pause at GREEN."
+9. "Confirm behavior 3 and the relevant regression tests are green, then
+   finish the remaining Phase 2 requirements and normal tests. Run the full
+   suite, linter, and formatter checks. Give me the browser verification
+   steps and wait for my confirmation before marking complete, committing,
+   or pushing. Don't start Phase 3 or run seed."
+10. "All Phase 2 manual checks passed. Mark Phase 2 complete, update
+    PROMPTS.md with the actual session, commit this phase, and push. Leave
+    REFLECTION.md and db.sqlite3 unstaged. Don't start Phase 3 or run
+    seed."
+
+### Summary
+
+- **Outcome:** Phase 2 of `plans/product-reviews.md` is built and marked
+  complete.
+  - **TDD, three behaviors, each shown RED on an assertion and approved
+    before the code was written:**
+    1. `has_purchased`, across six cases (placed, shipped, and delivered
+       count; cancelled, another user's order, and no orders don't), with a
+       different product's order present in every case. A stub returning
+       `False` gave `assert False is True`. The fix is one `.exists()` on
+       `OrderItem`, using an explicit list of qualifying statuses.
+    2. A second review gets the "already reviewed" form error, keeps the
+       typed text and stars, and leaves the existing review unchanged. The
+       fix is `ReviewForm.clean()`.
+    3. An invalid create returns only the form, keeping the input, with
+       `HX-Retarget: #review-form` and `HX-Reswap: outerHTML`. The
+       scaffolding already returned the form partial, so the test failed on
+       the missing header (`None == '#review-form'`).
+  - **Built normally:**
+    - `own_review` on the queryset
+    - `ReviewForm` with its custom error messages
+    - `CreateReviewView` at `reviews:create`: 403 before the form, and an
+      `IntegrityError` from a true race caught inside `transaction.atomic()`
+      and turned into the same form error
+    - a shared `section_context`, used by both the inclusion tag
+      (now `takes_context`) and the endpoint
+    - the "your review" slot with its four states, and the `_form.html`
+      partial (DaisyUI radio stars with labels, `hx-disabled-elt`)
+    - the CLAUDE.md entry update
+  - **Checks:** 612 tests pass, including 91 in `reviews` (47 new).
+    `ruff check` and `ruff format --check` are clean. No migration this
+    phase. The user ran all ten Phase 2 browser checks and they passed.
+    Seed was not run.
+- **Deviations:**
+  - The user approved all three TDD candidates and every test as written.
+  - For behavior 2, with the scaffolding in place the duplicate POST raised
+    an unhandled `IntegrityError` instead of failing an assertion. Only the
+    duplicate handling itself could change that. The agent stopped and
+    offered two options: accept the crash as RED (its recommendation), or
+    add temporary 500-handling code to the view. The user chose neither.
+    They kept the skill's assertion-failure rule and had that test use
+    `Client(raise_request_exception=False)`, so the crash became a 500 that
+    failed the expected-200 assertion, with no temporary code in the view.
+  - The user had the race-condition handling built normally, not inside
+    the behavior 2 cycle.
+- **Sideways:**
+  1. The first behavior 2 run with `raise_request_exception=False` still
+     printed the `IntegrityError` traceback. It was Django's request
+     logging, not the failure. Rerunning with `--show-capture=no` showed
+     the real failure, `assert 500 == 200`.
+  2. The first version of the behavior 2 test matched the checked star by
+     the template's exact whitespace. The agent replaced that with a
+     `checked_rating` helper before the first run.
+  3. In the normal tests, the "purchase required" note constant expected an
+     escaped apostrophe (`&#x27;`). Literal template text isn't escaped, so
+     six slot tests failed until the constant was fixed.
+  4. `ruff format` reformatted `reviews/tests.py` once before the checks
+     passed.
+  5. Two follow-ups for Phase 3: `ReviewForm.clean()` has to leave out the
+     review being edited, and the retarget id (`review-form`) is written in
+     both the view and the template. Edit forms will need their own ids.
+
+---
+
 ## 2026-10-18 — Product reviews Phase 1: read-only Reviews section
 
 ### Prompts

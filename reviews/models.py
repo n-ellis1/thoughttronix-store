@@ -4,10 +4,18 @@ from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
+from orders.models import Order, OrderItem
 from products.models import Product
 
 RATING_CHOICES = [
     (stars, f"{stars} star{'s' if stars > 1 else ''}") for stars in range(1, 6)
+]
+
+# The order statuses that make someone a buyer who may review.
+QUALIFYING_STATUSES = [
+    Order.Status.PLACED,
+    Order.Status.SHIPPED,
+    Order.Status.DELIVERED,
 ]
 
 
@@ -15,6 +23,12 @@ class ReviewQuerySet(models.QuerySet):
     def for_product(self, product):
         """The product's reviews, newest first, with both people loaded."""
         return self.filter(product=product).select_related("user", "edited_by")
+
+    def own_review(self, user, product):
+        """``user``'s review of ``product``, or None — never for anonymous users."""
+        if not user.is_authenticated:
+            return None
+        return self.for_product(product).filter(user=user).first()
 
     def summary_for(self, product):
         """The product's ``average``, review ``count``, and whole ``stars``.
@@ -33,6 +47,18 @@ class ReviewQuerySet(models.QuerySet):
             else int(Decimal(str(average)).quantize(Decimal("1"), ROUND_HALF_UP))
         )
         return summary
+
+    def has_purchased(self, user, product):
+        """Whether ``user`` has bought ``product`` in a qualifying order.
+
+        One existence query. Placed, shipped, and delivered orders count;
+        cancelled ones don't. Checked only when a review is written.
+        """
+        return OrderItem.objects.filter(
+            order__user=user,
+            order__status__in=QUALIFYING_STATUSES,
+            product=product,
+        ).exists()
 
 
 class Review(models.Model):
